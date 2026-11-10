@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion Photo & Live Photo Converter — 100% Client-Side</title>
+
+  <!-- Immediate Theme Detection (Auto-detect OS: Dark / Light) -->
+  <script>
+    (function() {
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"DM Sans"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            display: ['"Space Grotesk"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Google Fonts: Space Grotesk & DM Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Google Material Symbols Outlined -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- JSZip (Local Fallback + CDN) -->
+  <script src="./lib/jszip.min.js"></script>
+  <script>
+    if (typeof JSZip === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      document.head.appendChild(script);
+    }
+  </script>
+
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+
+    /* High-Contrast Liquid Glass Aesthetics (Both Light and Dark Mode) */
+    :root {
+      --bg-canvas: #e8ebf0;
+      --glass-surface: rgba(255, 255, 255, 0.94);
+      --glass-border: rgba(15, 23, 42, 0.13);
+      --glass-specular: rgba(255, 255, 255, 1);
+      --glass-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.09), 0 4px 6px -2px rgba(15, 23, 42, 0.04);
+      --card-highlight: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
+      --input-bg: #ffffff;
+      --input-border: rgba(15, 23, 42, 0.18);
+      --text-main: #090d16;
+      --text-muted: #475569;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+    }
+
+    html.dark {
+      --bg-canvas: #090a0d;
+      --glass-surface: rgba(17, 20, 28, 0.65);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-specular: rgba(255, 255, 255, 0.14);
+      --glass-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.65);
+      --card-highlight: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+      --input-bg: rgba(9, 11, 16, 0.75);
+      --input-border: rgba(255, 255, 255, 0.09);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      transition: background-color 0.25s ease, color 0.25s ease;
+      background-image: 
+        radial-gradient(circle 600px at 50% -15%, rgba(2, 132, 199, 0.08), transparent 70%),
+        radial-gradient(circle 500px at 100% 50%, rgba(14, 165, 233, 0.06), transparent 70%),
+        radial-gradient(circle 500px at 0% 80%, rgba(56, 189, 248, 0.06), transparent 70%);
+      background-attachment: fixed;
+    }
+
+    html.dark body {
+      background-image: 
+        radial-gradient(circle 600px at 50% -15%, rgba(56, 189, 248, 0.08), transparent 70%),
+        radial-gradient(circle 500px at 100% 50%, rgba(14, 165, 233, 0.05), transparent 70%),
+        radial-gradient(circle 500px at 0% 80%, rgba(56, 189, 248, 0.05), transparent 70%);
+    }
+
+    .liquid-glass {
+      background: var(--glass-surface);
+      backdrop-filter: blur(24px) saturate(170%);
+      -webkit-backdrop-filter: blur(24px) saturate(170%);
+      border: 1px solid var(--glass-border);
+      box-shadow: 
+        inset 0 1px 1.5px 0 var(--glass-specular),
+        var(--glass-shadow);
+      position: relative;
+    }
+
+    .liquid-glass::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 12%;
+      right: 12%;
+      height: 1px;
+      background: var(--card-highlight);
+      pointer-events: none;
+    }
+
+    .btn-liquid-primary {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.95) 0%, rgba(14, 165, 233, 1) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
+        0 6px 18px -4px rgba(2, 132, 199, 0.35);
+      color: #ffffff;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html.dark .btn-liquid-primary {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(14, 165, 233, 0.32) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+        0 6px 20px -4px rgba(56, 189, 248, 0.28);
+      color: #e0f2fe;
+    }
+
+    .btn-liquid-primary:hover:not(:disabled) {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .btn-liquid-success {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.9) 0%, rgba(5, 150, 105, 0.95) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 6px 18px -4px rgba(16, 185, 129, 0.35);
+      color: #ffffff;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html.dark .btn-liquid-success {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.28) 100%);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      box-shadow: 
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+        0 6px 20px -4px rgba(16, 185, 129, 0.25);
+      color: #ecfdf5;
+    }
+
+    .btn-liquid-ghost {
+      background: rgba(125, 135, 150, 0.1);
+      border: 1px solid var(--glass-border);
+      transition: all 0.2s ease;
+    }
+
+    .btn-liquid-ghost:hover {
+      background: rgba(125, 135, 150, 0.18);
+    }
+
+    .glass-input {
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text-main);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      transition: all 0.2s ease;
+    }
+
+    .glass-input:focus {
+      border-color: var(--accent);
+      outline: none;
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .liquid-dropzone {
+      background: var(--glass-surface);
+      border: 1.5px dashed var(--glass-border);
+      backdrop-filter: blur(20px);
+      transition: all 0.25s ease;
+    }
+
+    .liquid-dropzone:hover, .liquid-dropzone.drag-active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    /* Motion Photo Live Simulator */
+    .motion-simulator-card {
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .motion-indicator-badge {
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    /* Custom Range Sliders */
+    input[type=range] {
+      accent-color: #0284c7;
+    }
+    html.dark input[type=range] {
+      accent-color: #38bdf8;
+    }
+
+    /* Fun Fact Slide Animation */
+    .fact-slide-box {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .fact-text-anim {
+      transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .fact-text-anim.slide-out {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+
+    .fact-text-anim.slide-in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(125, 135, 150, 0.28); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(125, 135, 150, 0.45); }
+  </style>
+</head>
+<body class="selection:bg-sky-500/25 selection:text-sky-900 dark:selection:text-sky-200">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 border-b border-black/[0.08] dark:border-white/[0.06] backdrop-blur-xl bg-white/80 dark:bg-black/30 transition-colors">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-15 py-3 flex items-center justify-between">
+      
+      <!-- Brand Name -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl liquid-glass flex items-center justify-center text-sky-600 dark:text-sky-400">
+          <span class="material-symbols-outlined text-[20px]">motion_photos_on</span>
+        </div>
+        <div>
+          <h1 id="app-title" class="font-display font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white leading-tight">
+            Motion Photo Converter
+          </h1>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400 hidden sm:block">Android (Samsung & Google) • TikTok Ready • iPhone Live Photo</p>
+        </div>
+      </div>
+
+      <!-- Actions: Language Selector & Theme Toggle -->
+      <div class="flex items-center gap-2">
+        
+        <!-- Language Selector Dropdown -->
+        <div class="relative" id="lang-dropdown-wrapper">
+          <button id="lang-toggle-btn" class="btn-liquid-ghost px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 transition-colors" title="Ganti Bahasa">
+            <span id="current-flag" class="text-base leading-none">🇮🇩</span>
+            <span id="current-lang-code" class="font-mono text-[11px] uppercase font-bold text-slate-700 dark:text-slate-300">ID</span>
+            <span class="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">expand_more</span>
+          </button>
+
+          <!-- Language Menu -->
+          <div id="lang-menu" class="hidden absolute right-0 mt-2 w-44 liquid-glass rounded-xl shadow-2xl py-1.5 z-50 border border-black/15 dark:border-white/10 text-xs font-medium">
+            <button class="w-full px-3 py-2 text-left flex items-center gap-2.5 hover:bg-black/[0.06] dark:hover:bg-white/[0.06] transition-colors" data-lang="id">
+              <span class="text-base">🇮🇩</span> Bahasa Indonesia
+            </button>
+            <button class="w-full px-3 py-2 text-left flex items-center gap-2.5 hover:bg-black/[0.06] dark:hover:bg-white/[0.06] transition-colors" data-lang="en">
+              <span class="text-base">🇬🇧</span> English
+            </button>
+          </div>
+        </div>
+
+        <!-- Dark/Light Mode Switcher -->
+        <button id="theme-toggle" class="btn-liquid-ghost p-2 rounded-xl text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-colors flex items-center justify-center" title="Ganti Tema (Dark / Light)">
+          <span class="material-symbols-outlined text-[18px] hidden dark:block">light_mode</span>
+          <span class="material-symbols-outlined text-[18px] block dark:hidden">dark_mode</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Container: Responsive Grid -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Left Column: Converter Core (8 cols on desktop) -->
+      <div class="lg:col-span-8 space-y-5">
+        
+        <!-- Target Format Selector Card -->
+        <section class="liquid-glass rounded-2xl p-4 sm:p-5">
+          <div class="flex items-center justify-between mb-3">
+            <span id="target-mode-label" class="text-xs font-semibold tracking-wider uppercase text-slate-600 dark:text-slate-400">
+              Pilih Format Target:
+            </span>
+            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Dual Engine Google + Samsung
+            </span>
+          </div>
+
+          <!-- Format Cards (4 Options) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="mode-options-container">
+            
+            <!-- Android Option (Default) -->
+            <label class="cursor-pointer relative flex flex-col p-3 rounded-xl border border-sky-500 bg-sky-500/[0.08] dark:bg-sky-500/[0.12] transition-all" id="card-mode-android">
+              <input type="radio" name="targetMode" value="android" checked class="sr-only">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">🤖</span>
+                <span class="font-display font-bold text-xs sm:text-sm text-slate-900 dark:text-white">Android Motion Photo (.jpg)</span>
+              </div>
+              <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                1 file JPEG (Google XMP + Samsung SEF). Langsung terbaca di Galeri Samsung, Pixel, & Xiaomi.
+              </p>
+              <div class="mt-2 flex items-center gap-1 text-[10px] font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                Galeri Android
+              </div>
+            </label>
+
+            <!-- TikTok & WA Ready Option -->
+            <label class="cursor-pointer relative flex flex-col p-3 rounded-xl border border-black/[0.08] dark:border-white/[0.08] hover:border-slate-400 dark:hover:border-slate-500 transition-all bg-black/[0.02] dark:bg-white/[0.02]" id="card-mode-tiktok">
+              <input type="radio" name="targetMode" value="tiktok" class="sr-only">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">🎵</span>
+                <span class="font-display font-bold text-xs sm:text-sm text-slate-900 dark:text-white">TikTok & WA Ready (.mp4)</span>
+              </div>
+              <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                Klip loop 1.5 – 3s persis simpanan WhatsApp. Dijamin 100% bergerak & bersuara di TikTok!
+              </p>
+              <div class="mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[14px]">radio_button_unchecked</span>
+                Paling Ampuh TikTok
+              </div>
+            </label>
+
+            <!-- Apple Live Photo Option -->
+            <label class="cursor-pointer relative flex flex-col p-3 rounded-xl border border-black/[0.08] dark:border-white/[0.08] hover:border-slate-400 dark:hover:border-slate-500 transition-all bg-black/[0.02] dark:bg-white/[0.02]" id="card-mode-apple">
+              <input type="radio" name="targetMode" value="apple" class="sr-only">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">🍏</span>
+                <span class="font-display font-bold text-xs sm:text-sm text-slate-900 dark:text-white">iPhone Live Photo (.zip)</span>
+              </div>
+              <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                File kembar (.jpg + .mov) dengan Apple Asset UUID. Siap dikirim via AirDrop / iCloud.
+              </p>
+              <div class="mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[14px]">radio_button_unchecked</span>
+                iOS Dual-Asset
+              </div>
+            </label>
+
+            <!-- Dual Bundle Option -->
+            <label class="cursor-pointer relative flex flex-col p-3 rounded-xl border border-black/[0.08] dark:border-white/[0.08] hover:border-slate-400 dark:hover:border-slate-500 transition-all bg-black/[0.02] dark:bg-white/[0.02]" id="card-mode-dual">
+              <input type="radio" name="targetMode" value="dual" class="sr-only">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-base">📦</span>
+                <span class="font-display font-bold text-xs sm:text-sm text-slate-900 dark:text-white">Paket Lengkap (.zip)</span>
+              </div>
+              <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                Unduh semua format sekaligus (Android .jpg + TikTok .mp4 + iPhone .zip).
+              </p>
+              <div class="mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <span class="material-symbols-outlined text-[14px]">radio_button_unchecked</span>
+                All-in-One
+              </div>
+            </label>
+
+          </div>
+        </section>
+
+        <!-- Dropzone / Video Uploader -->
+        <section id="dropzone" class="liquid-dropzone rounded-2xl p-6 sm:p-8 text-center cursor-pointer relative overflow-hidden group">
+          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,video/mkv,video/*" class="hidden">
+          
+          <div class="flex flex-col items-center justify-center gap-3 pointer-events-none">
+            <div class="w-14 h-14 rounded-2xl liquid-glass flex items-center justify-center text-sky-600 dark:text-sky-400 group-hover:scale-105 transition-transform duration-300 shadow-sm">
+              <span class="material-symbols-outlined text-[32px]">video_library</span>
+            </div>
+            
+            <div class="space-y-1">
+              <p class="font-display font-semibold text-sm sm:text-base text-slate-900 dark:text-white">
+                <span id="drop-text-title">Tarik & jatuhkan file video ke sini, atau</span>
+                <span id="drop-browse-btn" class="text-sky-600 dark:text-sky-400 underline underline-offset-4 font-bold ml-1 hover:text-sky-500">pilih file</span>
+              </p>
+              <p id="drop-supported" class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Format didukung: MP4, MOV, WebM, M4V (Durasi ideal 1.5 – 6 detik)
+              </p>
+              <p id="drop-paste" class="text-[11px] font-mono text-slate-400 dark:text-slate-500 pt-1">
+                Bisa langsung paste file dari clipboard (<kbd class="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 text-[10px]">Ctrl + V</kbd>)
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Video Player & Timeline Trimmer (Hidden until video is loaded) -->
+        <section id="trimmer-panel" class="hidden liquid-glass rounded-2xl p-4 sm:p-5 space-y-4">
+          
+          <div class="flex items-center justify-between pb-3 border-b border-black/[0.08] dark:border-white/[0.06]">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-[20px]">content_cut</span>
+              <h3 id="trimmer-title" class="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                Timeline & Pemotong Klip Video
+              </h3>
+            </div>
+            
+            <!-- Trimmer Actions: Rotate & Change -->
+            <div class="flex items-center gap-2">
+              <!-- Rotation Button -->
+              <button id="rotate-video-btn" class="btn-liquid-ghost px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 hover:text-sky-500 transition-colors" title="Putar Posisi Video (0°, 90°, 180°, 270°)">
+                <span class="material-symbols-outlined text-[16px]">rotate_right</span>
+                <span id="rotate-btn-text">Putar: 0°</span>
+              </button>
+
+              <span id="file-name-badge" class="font-mono text-xs text-slate-600 dark:text-slate-300 bg-black/[0.05] dark:bg-white/[0.05] px-2.5 py-1 rounded-lg border border-black/[0.08] dark:border-white/[0.08] truncate max-w-[140px] sm:max-w-[180px]">
+                video.mp4
+              </span>
+              <button id="change-video-btn" class="btn-liquid-ghost p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-rose-500 transition-colors" title="Ganti Video">
+                <span class="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video Preview Display -->
+          <div class="relative rounded-xl overflow-hidden bg-black flex items-center justify-center min-h-[220px] max-h-[340px] shadow-inner group">
+            <div id="video-transform-wrapper" class="w-full h-full flex items-center justify-center transition-transform duration-300">
+              <video id="source-video" playsinline class="w-full max-h-[340px] object-contain"></video>
+            </div>
+            
+            <!-- Video Play/Pause Overlay Controls -->
+            <button id="play-pause-btn" class="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 text-white flex items-center justify-center backdrop-blur-md opacity-80 hover:opacity-100 hover:scale-110 transition-all pointer-events-auto">
+              <span id="play-icon" class="material-symbols-outlined text-[28px]">play_arrow</span>
+            </button>
+
+            <!-- Video Timecode Badge -->
+            <div class="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-mono text-white/90">
+              <span id="current-timecode">0.00s</span> / <span id="total-timecode">0.00s</span>
+            </div>
+
+            <!-- Orientation Badge -->
+            <div id="rotation-status-badge" class="hidden absolute top-2 right-2 bg-sky-600/80 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase tracking-wider">
+              Rotasi 180° Aktif
+            </div>
+          </div>
+
+          <!-- Trimming Controls: Start & End Sliders -->
+          <div class="space-y-3 pt-1">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-slate-700 dark:text-slate-300">
+                Rentang Klip Gerak:
+              </span>
+              <span id="clip-duration-badge" class="font-mono text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold border border-sky-500/20">
+                Durasi: 2.50s (Ideal)
+              </span>
+            </div>
+
+            <!-- Start & End Slider Controls -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Start Time -->
+              <div class="space-y-1 bg-black/[0.03] dark:bg-white/[0.03] p-2.5 rounded-xl border border-black/[0.06] dark:border-white/[0.06]">
+                <div class="flex justify-between text-[11px]">
+                  <span id="lbl-start-time" class="text-slate-500 dark:text-slate-400 font-medium">Mulai (Start):</span>
+                  <span id="val-start-time" class="font-mono font-bold text-slate-800 dark:text-slate-200">0.00s</span>
+                </div>
+                <input type="range" id="slider-start" min="0" max="10" step="0.05" value="0" class="w-full cursor-pointer h-1.5 bg-slate-300 dark:bg-slate-700 rounded-lg">
+              </div>
+
+              <!-- End Time -->
+              <div class="space-y-1 bg-black/[0.03] dark:bg-white/[0.03] p-2.5 rounded-xl border border-black/[0.06] dark:border-white/[0.06]">
+                <div class="flex justify-between text-[11px]">
+                  <span id="lbl-end-time" class="text-slate-500 dark:text-slate-400 font-medium">Selesai (End):</span>
+                  <span id="val-end-time" class="font-mono font-bold text-slate-800 dark:text-slate-200">2.50s</span>
+                </div>
+                <input type="range" id="slider-end" min="0" max="10" step="0.05" value="2.5" class="w-full cursor-pointer h-1.5 bg-slate-300 dark:bg-slate-700 rounded-lg">
+              </div>
+            </div>
+          </div>
+
+          <!-- Cover Photo (Keyframe) Selector -->
+          <div class="p-3.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/[0.06] space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[18px] text-amber-500">photo_camera</span>
+                <h4 id="lbl-keyframe-title" class="font-display font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                  Pilih Foto Sampul (Keyframe Foto Statis)
+                </h4>
+              </div>
+              <div class="flex items-center gap-1">
+                <button type="button" id="btn-kf-start" class="btn-liquid-ghost px-2 py-0.5 text-[10px] font-semibold rounded-md">Awal</button>
+                <button type="button" id="btn-kf-mid" class="btn-liquid-ghost px-2 py-0.5 text-[10px] font-semibold rounded-md">Tengah</button>
+                <button type="button" id="btn-kf-end" class="btn-liquid-ghost px-2 py-0.5 text-[10px] font-semibold rounded-md">Akhir</button>
+              </div>
+            </div>
+
+            <p id="lbl-keyframe-hint" class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+              Geser slider di bawah untuk memilih frame diam yang tampil saat foto belum ditekan:
+            </p>
+
+            <div class="flex items-center gap-3">
+              <!-- Keyframe Thumbnail Canvas Preview -->
+              <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border border-black/15 dark:border-white/15 bg-black flex-shrink-0 relative shadow-sm">
+                <canvas id="keyframe-canvas" class="w-full h-full object-cover"></canvas>
+                <div class="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] font-mono text-center text-white py-0.5">
+                  <span id="keyframe-time-display">0.00s</span>
+                </div>
+              </div>
+
+              <!-- Keyframe Slider -->
+              <div class="flex-1 space-y-1.5">
+                <div class="flex justify-between text-[11px]">
+                  <span class="text-slate-500 dark:text-slate-400">Posisi Foto Diam:</span>
+                  <span id="keyframe-pos-val" class="font-mono font-bold text-sky-600 dark:text-sky-400">0.00s</span>
+                </div>
+                <input type="range" id="slider-keyframe" min="0" max="10" step="0.05" value="0" class="w-full cursor-pointer h-2 bg-slate-300 dark:bg-slate-700 rounded-lg">
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 italic">
+                  Frame ini akan disimpan tegak sesuai rotasi yang Anda pilih.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Conversion Options Bar -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <!-- Quality Setting -->
+            <div>
+              <label for="select-quality" id="lbl-quality" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Kualitas Foto Statis:
+              </label>
+              <select id="select-quality" class="glass-input w-full text-xs rounded-xl px-3 py-2 font-medium">
+                <option value="0.95" selected>Maksimal (95% — Rekomendasi)</option>
+                <option value="0.88">Tinggi (88%)</option>
+                <option value="0.75">Standar (75% Hemat Ukuran)</option>
+              </select>
+            </div>
+
+            <!-- Resolution Setting -->
+            <div>
+              <label for="select-resolution" id="lbl-resolution" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                Resolusi Output:
+              </label>
+              <select id="select-resolution" class="glass-input w-full text-xs rounded-xl px-3 py-2 font-medium">
+                <option value="original" selected>Asli (1:1 Dimensi Video)</option>
+                <option value="1080">Full HD (Maks. 1080p)</option>
+                <option value="720">HD (Maks. 720p)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Main Action Button -->
+          <div class="pt-2">
+            <button id="convert-btn" class="w-full btn-liquid-primary py-3 px-4 rounded-xl font-display font-bold text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer transition-all">
+              <span class="material-symbols-outlined text-[20px]">bolt</span>
+              <span id="convert-btn-text">Buat Motion Photo Sekarang</span>
+            </button>
+          </div>
+
+          <!-- Progress Bar & Status (Hidden by default) -->
+          <div id="progress-container" class="hidden p-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-black/[0.08] dark:border-white/[0.08] space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span id="progress-status-text" class="font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px] animate-spin text-sky-500">progress_activity</span>
+                Mengekstrak frame dan menyuntikkan metadata...
+              </span>
+              <span id="progress-percent" class="font-mono font-bold text-sky-600 dark:text-sky-400">0%</span>
+            </div>
+            <div class="w-full bg-black/10 dark:bg-white/10 rounded-full h-2 overflow-hidden">
+              <div id="progress-bar-fill" class="bg-gradient-to-r from-sky-500 to-teal-400 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- Final Converted Result Inspection & Interactive Simulator (Hidden until converted) -->
+        <section id="result-card" class="hidden liquid-glass rounded-2xl p-4 sm:p-5 space-y-4 border-2 border-sky-500/30">
+          
+          <div class="flex items-center justify-between pb-3 border-b border-black/[0.08] dark:border-white/[0.06]">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-emerald-500 text-[22px]">check_circle</span>
+              <h3 id="result-card-title" class="font-display font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                Motion Photo Siap Digunakan!
+              </h3>
+            </div>
+            <span class="text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              Valid Metadata XMP & SEF
+            </span>
+          </div>
+
+          <!-- Motion Photo Interactive Simulator -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-500 dark:text-slate-400">Simulator Live Interaktif:</span>
+              <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400">
+                <span class="material-symbols-outlined text-[15px] motion-indicator-badge">touch_app</span>
+                Arahkan kursor atau Tekan & Tahan untuk memutar
+              </span>
+            </div>
+
+            <!-- Simulator Container -->
+            <div id="simulator-box" class="motion-simulator-card rounded-xl overflow-hidden bg-black flex items-center justify-center min-h-[220px] max-h-[300px] border border-black/15 dark:border-white/10 group shadow-md">
+              <img id="sim-still-img" class="w-full max-h-[300px] object-contain transition-opacity duration-200" alt="Still Photo">
+              <video id="sim-motion-video" playsinline loop muted class="w-full max-h-[300px] object-contain hidden"></video>
+
+              <!-- Motion Photo Watermark/Badge -->
+              <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-semibold text-white/90 border border-white/20">
+                <span class="material-symbols-outlined text-[14px] text-amber-400">motion_photos_on</span>
+                <span id="sim-badge-text">MOTION PHOTO</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Details & File Sizes -->
+          <div class="grid grid-cols-3 gap-2 py-2 px-3 rounded-xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/[0.06] text-center">
+            <div>
+              <p class="text-[10px] text-slate-500 dark:text-slate-400">Foto Statis</p>
+              <p id="res-still-size" class="font-mono font-bold text-xs text-slate-800 dark:text-slate-200">-</p>
+            </div>
+            <div class="border-x border-black/[0.08] dark:border-white/[0.08]">
+              <p class="text-[10px] text-slate-500 dark:text-slate-400">Klip Video</p>
+              <p id="res-video-size" class="font-mono font-bold text-xs text-slate-800 dark:text-slate-200">-</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-slate-500 dark:text-slate-400">Total File</p>
+              <p id="res-total-size" class="font-mono font-bold text-xs text-sky-600 dark:text-sky-400">-</p>
+            </div>
+          </div>
+
+          <!-- Download Action Buttons -->
+          <div class="flex flex-col sm:flex-row gap-2 pt-1">
+            <button id="download-result-btn" class="flex-1 btn-liquid-success py-3 px-4 rounded-xl font-display font-bold text-sm sm:text-base flex items-center justify-center gap-2 cursor-pointer shadow-lg">
+              <span class="material-symbols-outlined text-[20px]">download</span>
+              <span id="download-btn-label">Unduh File</span>
+            </button>
+            <button id="reset-tool-btn" class="btn-liquid-ghost py-3 px-4 rounded-xl font-medium text-xs sm:text-sm text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-colors">
+              Ubah Video Lain
+            </button>
+          </div>
+
+        </section>
+
+      </div>
+
+      <!-- Right Column: Step-by-Step Guide & 25+ Fun Facts (4 cols on desktop) -->
+      <div class="lg:col-span-4 space-y-5">
+        
+        <!-- Step-by-step Smartphone & TikTok Instructions Card -->
+        <section class="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3">
+          <div class="flex items-center gap-2 pb-2.5 border-b border-black/[0.08] dark:border-white/[0.06]">
+            <span class="material-symbols-outlined text-sky-600 dark:text-sky-400 text-[20px]">smartphone</span>
+            <h3 id="guide-card-title" class="font-display font-bold text-sm text-slate-900 dark:text-white">
+              Cara Memutar di Smartphone & TikTok
+            </h3>
+          </div>
+
+          <!-- TikTok Tip (Highlighted) -->
+          <div class="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs space-y-1">
+            <div class="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-300">
+              <span>🎵</span>
+              <span>Kiat Khusus TikTok Android:</span>
+            </div>
+            <p class="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+              Gunakan opsi <strong>TikTok & WA Ready (.mp4)</strong> untuk upload ke TikTok. TikTok akan memutarnya sebagai video/motion looping otomatis dengan suara penuh persis seperti hasil unduhan WhatsApp!
+            </p>
+          </div>
+
+          <!-- Android Instructions -->
+          <div class="space-y-1.5 pt-1">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>🤖</span>
+              <span>Di Galeri Android (Samsung / Pixel):</span>
+            </div>
+            <ol class="space-y-1 text-xs text-slate-600 dark:text-slate-300 list-decimal list-inside pl-1 leading-relaxed">
+              <li>Pilih opsi <strong>Android (.jpg)</strong>, file sudah disuntik metadata Samsung SEF & Google XMP.</li>
+              <li>Buka di <strong>Galeri Bawaan Samsung</strong> atau <strong>Google Photos</strong>.</li>
+              <li>Tombol <span class="font-semibold text-sky-600 dark:text-sky-400">"Lihat Foto Bergerak"</span> akan langsung aktif!</li>
+            </ol>
+          </div>
+
+          <!-- iOS Instructions -->
+          <div class="space-y-1.5 pt-2 border-t border-black/[0.08] dark:border-white/[0.06]">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <span>🍏</span>
+              <span>Di iPhone / iPad (Apple iOS):</span>
+            </div>
+            <ol class="space-y-1 text-xs text-slate-600 dark:text-slate-300 list-decimal list-inside pl-1 leading-relaxed">
+              <li>Unduh opsi <strong>iPhone (.zip)</strong>, ekstrak, lalu kirim kedua file (.jpg + .mov) via <strong>AirDrop</strong>.</li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- Fun Facts Rotating Card -->
+        <section class="liquid-glass rounded-2xl p-4 sm:p-5 space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-black/[0.08] dark:border-white/[0.06]">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-amber-500 text-[18px]">lightbulb</span>
+              <h3 id="funfact-header" class="font-display font-bold text-xs uppercase tracking-wider text-slate-900 dark:text-white">
+                Tahukah Anda?
+              </h3>
+            </div>
+            <span class="text-[10px] font-mono text-slate-400 dark:text-slate-500" id="funfact-counter">1/25</span>
+          </div>
+
+          <div class="fact-slide-box min-h-[90px] flex items-center">
+            <p id="funfact-text" class="fact-text-anim text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed italic">
+              Di Android, Motion Photo bukanlah format rahasia baru, melainkan file standar JPEG yang ditempelkan video MP4 langsung di ekor file-nya.
+            </p>
+          </div>
+
+          <div class="flex items-center justify-between pt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <span class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+              Rotasi tiap 10 detik
+            </span>
+            <div class="flex items-center gap-1">
+              <button id="fact-prev-btn" class="btn-liquid-ghost p-1 rounded-md hover:text-slate-900 dark:hover:text-white" title="Sebelumnya">
+                <span class="material-symbols-outlined text-[14px]">chevron_left</span>
+              </button>
+              <button id="fact-next-btn" class="btn-liquid-ghost p-1 rounded-md hover:text-slate-900 dark:hover:text-white" title="Berikutnya">
+                <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Technical Anatomy Card -->
+        <section class="liquid-glass rounded-2xl p-4 sm:p-5 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+          <div class="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white pb-1.5 border-b border-black/[0.08] dark:border-white/[0.06]">
+            <span class="material-symbols-outlined text-[18px] text-sky-500">memory</span>
+            <span>Struktur Biner Dual-Engine</span>
+          </div>
+          <div class="font-mono text-[10px] space-y-1 bg-black/[0.04] dark:bg-white/[0.04] p-2.5 rounded-xl border border-black/[0.06] dark:border-white/[0.06] overflow-x-auto">
+            <p class="text-emerald-600 dark:text-emerald-400">[00-02] SOI: 0xFFD8</p>
+            <p class="text-sky-600 dark:text-sky-400">[02-..] APP1: Google XMP &lt;GCamera:MotionPhoto&gt;</p>
+            <p class="text-slate-500">[..-..] JPEG Upright Scan Pixels</p>
+            <p class="text-emerald-600 dark:text-emerald-400">[..-..] EOI: 0xFFD9</p>
+            <p class="text-amber-600 dark:text-amber-400">[..-..] Standard H.264 MP4 Video Stream</p>
+            <p class="text-purple-600 dark:text-purple-400">[..-EOF] Samsung SEF (SEFH + MotionPhoto_Data + SEFT)</p>
+          </div>
+          <p class="text-[11px] leading-tight text-slate-500 dark:text-slate-400 pt-1">
+            Mendukung dua mesin sekaligus: Google Photos membaca XMP di depan, Samsung Gallery membaca SEFT di belakang!
+          </p>
+        </section>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Main JavaScript App Controller -->
+  <script type="module" src="./app.js"></script>
+
+  <!-- Initialize Lucide icons on page load -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    });
+  </script>
+</body>
+</html>
