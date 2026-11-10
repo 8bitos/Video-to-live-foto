@@ -1,11 +1,9 @@
 /**
- * app.js
- * Main Controller for Video to Motion Photo & Live Photo Converter
+ * app.js - Mobile-Optimized Controller for Android & TikTok
  * 100% Client-Side Universal Converter
  */
 
 import { translations } from './i18n.js';
-import { funFactsData } from './funfacts.js';
 import { 
   createGoogleMotionPhoto, 
   createAppleLivePhoto, 
@@ -14,13 +12,11 @@ import {
 } from './motionEngine.js';
 
 // Global State
-let currentLang = localStorage.getItem('motion_lang') || 'id';
+let currentLang = 'id';
 let currentVideoFile = null;
 let currentVideoUrl = null;
-let currentRotation = 0; // 0, 90, 180, 270 degrees
+let currentRotation = 0; // 0, 90, 180, 270
 let isConverting = false;
-let currentFactIndex = 0;
-let factInterval = null;
 
 // Converted Artifacts Cache
 let generatedResult = {
@@ -43,7 +39,6 @@ const sourceVideo = doc.getElementById('source-video');
 const videoTransformWrapper = doc.getElementById('video-transform-wrapper');
 const rotateVideoBtn = doc.getElementById('rotate-video-btn');
 const rotateBtnText = doc.getElementById('rotate-btn-text');
-const rotationStatusBadge = doc.getElementById('rotation-status-badge');
 
 const playPauseBtn = doc.getElementById('play-pause-btn');
 const playIcon = doc.getElementById('play-icon');
@@ -67,8 +62,6 @@ const btnKfStart = doc.getElementById('btn-kf-start');
 const btnKfMid = doc.getElementById('btn-kf-mid');
 const btnKfEnd = doc.getElementById('btn-kf-end');
 
-const selectQuality = doc.getElementById('select-quality');
-const selectResolution = doc.getElementById('select-resolution');
 const convertBtn = doc.getElementById('convert-btn');
 const convertBtnText = doc.getElementById('convert-btn-text');
 
@@ -82,26 +75,16 @@ const resultCard = doc.getElementById('result-card');
 const simulatorBox = doc.getElementById('simulator-box');
 const simStillImg = doc.getElementById('sim-still-img');
 const simMotionVideo = doc.getElementById('sim-motion-video');
-const resStillSize = doc.getElementById('res-still-size');
-const resVideoSize = doc.getElementById('res-video-size');
 const resTotalSize = doc.getElementById('res-total-size');
 const downloadResultBtn = doc.getElementById('download-result-btn');
 const downloadBtnLabel = doc.getElementById('download-btn-label');
 const resetToolBtn = doc.getElementById('reset-tool-btn');
 
-// Mode Selection
+// Mode Selection Cards
 const modeCards = {
   android: doc.getElementById('card-mode-android'),
-  tiktok: doc.getElementById('card-mode-tiktok'),
-  apple: doc.getElementById('card-mode-apple'),
-  dual: doc.getElementById('card-mode-dual')
+  tiktok: doc.getElementById('card-mode-tiktok')
 };
-
-// Fun Facts Elements
-const funfactText = doc.getElementById('funfact-text');
-const funfactCounter = doc.getElementById('funfact-counter');
-const factPrevBtn = doc.getElementById('fact-prev-btn');
-const factNextBtn = doc.getElementById('fact-next-btn');
 
 // Format Helper
 function formatBytes(bytes) {
@@ -121,32 +104,24 @@ function getSelectedMode() {
   return checked ? checked.value : 'android';
 }
 
-// Update Mode Card Highlighting
+// Mode Selection Highlighting
 function updateModeCardStyles() {
   const currentMode = getSelectedMode();
   Object.keys(modeCards).forEach(modeKey => {
     const card = modeCards[modeKey];
     if (!card) return;
-    const statusIcon = card.querySelector('.material-symbols-outlined');
 
     if (modeKey === currentMode) {
-      card.className = "cursor-pointer relative flex flex-col p-3 rounded-xl border border-sky-500 bg-sky-500/[0.08] dark:bg-sky-500/[0.12] transition-all";
-      if (statusIcon) statusIcon.textContent = "check_circle";
+      card.className = "cursor-pointer flex items-center gap-2 p-2.5 rounded-xl border-2 border-sky-500 bg-sky-500/10 dark:bg-sky-500/20 transition-all";
     } else {
-      card.className = "cursor-pointer relative flex flex-col p-3 rounded-xl border border-black/[0.08] dark:border-white/[0.08] hover:border-slate-400 dark:hover:border-slate-500 transition-all bg-black/[0.02] dark:bg-white/[0.02]";
-      if (statusIcon) statusIcon.textContent = "radio_button_unchecked";
+      card.className = "cursor-pointer flex items-center gap-2 p-2.5 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] transition-all";
     }
   });
 
-  const isId = currentLang === 'id';
   if (currentMode === 'android') {
-    convertBtnText.textContent = isId ? "Buat Android Motion Photo (.jpg)" : "Create Android Motion Photo (.jpg)";
-  } else if (currentMode === 'tiktok') {
-    convertBtnText.textContent = isId ? "Buat Klip TikTok & WA Ready (.mp4)" : "Create TikTok & WA Ready Clip (.mp4)";
-  } else if (currentMode === 'apple') {
-    convertBtnText.textContent = isId ? "Buat iPhone Live Photo (.zip)" : "Create iPhone Live Photo (.zip)";
+    convertBtnText.textContent = "Buat Android Motion Photo (.jpg)";
   } else {
-    convertBtnText.textContent = isId ? "Buat Paket Lengkap (All-in-One)" : "Create All-in-One Bundle";
+    convertBtnText.textContent = "Buat TikTok Loop Video (.mp4)";
   }
 }
 
@@ -164,29 +139,29 @@ function loadVideo(file) {
 
   fileNameBadge.textContent = file.name;
   sourceVideo.src = currentVideoUrl;
+  sourceVideo.muted = true;
+  sourceVideo.playsInline = true;
   sourceVideo.load();
 
   sourceVideo.onloadedmetadata = () => {
     const dur = sourceVideo.duration || 3.0;
 
-    // Reset range sliders
     sliderStart.min = "0";
     sliderStart.max = dur.toString();
     sliderStart.value = "0";
 
-    const defaultEnd = Math.min(3.0, dur);
+    const defaultEnd = Math.min(2.5, dur);
     sliderEnd.min = "0";
     sliderEnd.max = dur.toString();
     sliderEnd.value = defaultEnd.toString();
 
     sliderKeyframe.min = "0";
     sliderKeyframe.max = dur.toString();
-    sliderKeyframe.value = (defaultEnd / 2).toString();
+    sliderKeyframe.value = "0";
 
     updateSliderUI();
-    renderKeyframePreview(parseFloat(sliderKeyframe.value));
+    renderKeyframePreview(0);
 
-    // Show trimmer, hide dropzone
     dropzone.classList.add('hidden');
     trimmerPanel.classList.remove('hidden');
     resultCard.classList.add('hidden');
@@ -195,23 +170,15 @@ function loadVideo(file) {
   };
 
   sourceVideo.onerror = () => {
-    alert(translations[currentLang].errorInvalidVideo);
+    alert("Format video tidak dapat diputar di browser ini. Coba gunakan video MP4.");
   };
 }
 
-// Rotation Toggle Handling
+// Quick Rotation Button (0°, 90°, 180°, 270°)
 function updateRotationDisplay() {
   rotateBtnText.textContent = `Putar: ${currentRotation}°`;
   if (videoTransformWrapper) {
     videoTransformWrapper.style.transform = `rotate(${currentRotation}deg)`;
-  }
-  if (rotationStatusBadge) {
-    if (currentRotation !== 0) {
-      rotationStatusBadge.classList.remove('hidden');
-      rotationStatusBadge.textContent = `Rotasi ${currentRotation}° Aktif`;
-    } else {
-      rotationStatusBadge.classList.add('hidden');
-    }
   }
   renderKeyframePreview(parseFloat(sliderKeyframe.value));
 }
@@ -221,12 +188,33 @@ rotateVideoBtn.addEventListener('click', () => {
   updateRotationDisplay();
 });
 
+// Duration Presets (1.5s, 2.0s, 2.5s, 3.0s)
+doc.querySelectorAll('.dur-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const dur = parseFloat(btn.getAttribute('data-dur'));
+    const start = parseFloat(sliderStart.value);
+    const maxDur = parseFloat(sliderEnd.max);
+    
+    let newEnd = start + dur;
+    if (newEnd > maxDur) {
+      newEnd = maxDur;
+    }
+    sliderEnd.value = newEnd.toFixed(2);
+    updateSliderUI();
+
+    doc.querySelectorAll('.dur-preset-btn').forEach(b => {
+      b.className = "dur-preset-btn py-1.5 rounded-lg text-xs font-bold border border-black/10 dark:border-white/10 text-slate-700 dark:text-slate-300";
+    });
+    btn.className = "dur-preset-btn py-1.5 rounded-lg text-xs font-bold border-2 border-sky-500 bg-sky-500/10 text-sky-600 dark:text-sky-400";
+  });
+});
+
 function updateSliderUI() {
   const start = parseFloat(sliderStart.value);
   let end = parseFloat(sliderEnd.value);
 
-  if (end <= start + 0.4) {
-    end = Math.min(parseFloat(sliderEnd.max), start + 0.5);
+  if (end <= start + 0.5) {
+    end = Math.min(parseFloat(sliderEnd.max), start + 0.8);
     sliderEnd.value = end.toString();
   }
 
@@ -234,13 +222,7 @@ function updateSliderUI() {
   valEndTime.textContent = formatSeconds(end);
 
   const duration = end - start;
-  clipDurationBadge.textContent = `${translations[currentLang].videoDurationLabel} ${formatSeconds(duration)}`;
-
-  if (duration >= 1.5 && duration <= 3.5) {
-    clipDurationBadge.className = "font-mono text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20";
-  } else {
-    clipDurationBadge.className = "font-mono text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold border border-sky-500/20";
-  }
+  clipDurationBadge.textContent = `Durasi: ${formatSeconds(duration)}`;
 
   let kf = parseFloat(sliderKeyframe.value);
   if (kf < start) sliderKeyframe.value = start.toString();
@@ -250,7 +232,7 @@ function updateSliderUI() {
 
 // Render Still Frame to Canvas with Rotation
 function renderKeyframePreview(timeSec) {
-  extractCoverFrame(sourceVideo, timeSec, 0.8, 320, currentRotation)
+  extractCoverFrame(sourceVideo, timeSec, 0.85, 240, currentRotation)
     .then(({ dataUrl, width, height }) => {
       keyframeCanvas.width = width;
       keyframeCanvas.height = height;
@@ -274,7 +256,7 @@ playPauseBtn.addEventListener('click', () => {
     if (sourceVideo.currentTime < start || sourceVideo.currentTime >= parseFloat(sliderEnd.value)) {
       sourceVideo.currentTime = start;
     }
-    sourceVideo.play();
+    sourceVideo.play().catch(() => {});
     playIcon.textContent = 'pause';
   } else {
     sourceVideo.pause();
@@ -348,9 +330,9 @@ Object.keys(modeCards).forEach(modeKey => {
 });
 
 // -------------------------------------------------------------
-// Drag & Drop / File Input / Paste Listeners
+// Drag & Drop / File Input Listeners
 // -------------------------------------------------------------
-dropzone.addEventListener('click', (e) => {
+dropzone.addEventListener('click', () => {
   videoFileInput.click();
 });
 
@@ -358,38 +340,6 @@ videoFileInput.addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
     loadVideo(e.target.files[0]);
     videoFileInput.value = '';
-  }
-});
-
-dropzone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropzone.classList.add('drag-active');
-});
-
-dropzone.addEventListener('dragleave', () => {
-  dropzone.classList.remove('drag-active');
-});
-
-dropzone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropzone.classList.remove('drag-active');
-  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    const file = e.dataTransfer.files[0];
-    if (file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|webm|m4v|mkv)$/i)) {
-      loadVideo(file);
-    } else {
-      alert(translations[currentLang].errorInvalidVideo);
-    }
-  }
-});
-
-// Paste Clipboard
-window.addEventListener('paste', (e) => {
-  if (e.clipboardData && e.clipboardData.files.length > 0) {
-    const file = e.clipboardData.files[0];
-    if (file.type.startsWith('video/')) {
-      loadVideo(file);
-    }
   }
 });
 
@@ -413,13 +363,13 @@ resetToolBtn.addEventListener('click', () => {
 convertBtn.addEventListener('click', async () => {
   if (isConverting || !currentVideoFile) return;
 
-  const t = translations[currentLang];
   const startTime = parseFloat(sliderStart.value);
   const endTime = parseFloat(sliderEnd.value);
   const keyframeTime = parseFloat(sliderKeyframe.value);
+  const duration = endTime - startTime;
 
-  if (endTime <= startTime + 0.3) {
-    alert(t.errorTrimRange);
+  if (duration < 0.6) {
+    alert("Durasi klip minimal 0.8 detik.");
     return;
   }
 
@@ -435,23 +385,20 @@ convertBtn.addEventListener('click', async () => {
   };
 
   try {
-    const quality = parseFloat(selectQuality.value) || 0.95;
-    const resVal = selectResolution.value;
-    const maxDim = resVal === 'original' ? null : parseInt(resVal, 10);
     const targetMode = getSelectedMode();
 
-    // 1. Extract Cover Photo Frame with chosen rotation
-    updateProgress(15, t.stepExtractCover);
-    const coverResult = await extractCoverFrame(sourceVideo, keyframeTime, quality, maxDim, currentRotation);
-    updateProgress(35, t.stepClipVideo);
-
-    // 2. Prepare & Trim Video Segment with chosen rotation & audio sync
+    // 1. Extract Cover Photo Frame (720p / 1280 max for mobile performance)
+    updateProgress(15, "1/3. Mengekstrak frame foto utama...");
+    const coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation);
+    
+    // 2. Prepare & Trim Video Segment (Smooth 30fps H.264)
+    updateProgress(35, `2/3. Memproses klip video (${duration.toFixed(1)}s)...`);
     const videoClipBytes = await trimVideoClip(sourceVideo, startTime, endTime, currentVideoFile, currentRotation, (p) => {
-      updateProgress(35 + Math.round(p * 0.35), t.stepClipVideo);
+      updateProgress(35 + Math.round(p * 0.50), `2/3. Memproses frame (${Math.round(p)}%)...`);
     });
 
     // 3. Inject Metadata
-    updateProgress(80, t.stepInjectMetadata);
+    updateProgress(90, "3/3. Menggabungkan file & metadata...");
     const timestampUs = Math.round((keyframeTime - startTime) * 1_000_000);
     const baseName = currentVideoFile.name.replace(/\.[^/.]+$/, "");
     const dateStamp = new Date().toISOString().slice(0,10).replace(/-/g, "");
@@ -461,7 +408,7 @@ convertBtn.addEventListener('click', async () => {
     let clipVideoBlob = new Blob([videoClipBytes], { type: 'video/mp4' });
 
     if (targetMode === 'android') {
-      // Android Single-file JPEG with Dual Google XMP + Samsung SEF
+      // Android Motion Photo (.jpg) with MP4 at exact physical EOF
       const motionBytes = createGoogleMotionPhoto(coverResult.uint8Array, videoClipBytes, timestampUs);
       finalBlob = new Blob([motionBytes], { type: 'image/jpeg' });
       finalFilename = `MOTION_${dateStamp}_${baseName}.jpg`;
@@ -477,10 +424,10 @@ convertBtn.addEventListener('click', async () => {
         clipVideoUrl: URL.createObjectURL(clipVideoBlob)
       };
 
-    } else if (targetMode === 'tiktok') {
-      // TikTok & WA Ready Standalone Looping MP4
+    } else {
+      // TikTok Ready Looping MP4 Video
       finalBlob = clipVideoBlob;
-      finalFilename = `TIKTOK_LIVE_${dateStamp}_${baseName}.mp4`;
+      finalFilename = `TIKTOK_${dateStamp}_${baseName}.mp4`;
 
       generatedResult = {
         mode: 'tiktok',
@@ -492,94 +439,28 @@ convertBtn.addEventListener('click', async () => {
         coverDataUrl: coverResult.dataUrl,
         clipVideoUrl: URL.createObjectURL(clipVideoBlob)
       };
-
-    } else if (targetMode === 'apple') {
-      // iPhone Live Photo Twin Assets in ZIP
-      updateProgress(90, t.stepPackaging);
-      const appleResult = createAppleLivePhoto(coverResult.uint8Array, videoClipBytes);
-      
-      const zip = new window.JSZip();
-      zip.file(`IMG_${dateStamp}.JPG`, appleResult.photoBytes);
-      zip.file(`IMG_${dateStamp}.MOV`, appleResult.videoBytes);
-
-      const readmeText = 
-        `Apple Live Photo Twin Assets\n` +
-        `UUID: ${appleResult.uuid}\n\n` +
-        `Cara mengimpor ke iPhone:\n` +
-        `1. AirDrop: Kirim kedua file (.JPG dan .MOV) bersamaan ke iPhone.\n` +
-        `2. iCloud: Buka icloud.com/photos di PC, unggah kedua file bersamaan.`;
-      zip.file('README_CARA_PAKAI.txt', readmeText);
-
-      finalBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      finalFilename = `LIVE_PHOTO_${dateStamp}_${baseName}.zip`;
-
-      generatedResult = {
-        mode: 'apple',
-        blob: finalBlob,
-        filename: finalFilename,
-        stillSize: coverResult.uint8Array.byteLength,
-        videoSize: videoClipBytes.byteLength,
-        totalSize: finalBlob.size,
-        coverDataUrl: coverResult.dataUrl,
-        clipVideoUrl: URL.createObjectURL(clipVideoBlob)
-      };
-
-    } else {
-      // Dual Bundle
-      updateProgress(90, t.stepPackaging);
-      const motionBytes = createGoogleMotionPhoto(coverResult.uint8Array, videoClipBytes, timestampUs);
-      const appleResult = createAppleLivePhoto(coverResult.uint8Array, videoClipBytes);
-
-      const zip = new window.JSZip();
-      // Android File
-      zip.file(`MOTION_${dateStamp}_${baseName}.jpg`, motionBytes);
-      // TikTok Video
-      zip.file(`TIKTOK_READY_${dateStamp}_${baseName}.mp4`, videoClipBytes);
-      // Apple Files
-      const appleFolder = zip.folder("Apple_iOS_LivePhoto");
-      appleFolder.file(`IMG_${dateStamp}.JPG`, appleResult.photoBytes);
-      appleFolder.file(`IMG_${dateStamp}.MOV`, appleResult.videoBytes);
-
-      finalBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      finalFilename = `ALL_IN_ONE_${dateStamp}_${baseName}.zip`;
-
-      generatedResult = {
-        mode: 'dual',
-        blob: finalBlob,
-        filename: finalFilename,
-        stillSize: coverResult.uint8Array.byteLength,
-        videoSize: videoClipBytes.byteLength,
-        totalSize: finalBlob.size,
-        coverDataUrl: coverResult.dataUrl,
-        clipVideoUrl: URL.createObjectURL(clipVideoBlob)
-      };
     }
 
-    updateProgress(100, t.resultTitle);
+    updateProgress(100, "Selesai!");
 
-    // Setup Result Card
     setTimeout(() => {
       progressContainer.classList.add('hidden');
       resultCard.classList.remove('hidden');
 
-      resStillSize.textContent = formatBytes(generatedResult.stillSize);
-      resVideoSize.textContent = formatBytes(generatedResult.videoSize);
-      resTotalSize.textContent = formatBytes(generatedResult.totalSize);
+      resTotalSize.textContent = `${formatBytes(generatedResult.totalSize)} • ${duration.toFixed(1)} detik`;
+      downloadBtnLabel.textContent = `Unduh (${finalFilename})`;
 
-      downloadBtnLabel.textContent = `${t.downloadBtn} (${finalFilename})`;
-
-      // Setup Simulator
       simStillImg.src = generatedResult.coverDataUrl;
       simMotionVideo.src = generatedResult.clipVideoUrl;
       simStillImg.classList.remove('hidden');
       simMotionVideo.classList.add('hidden');
 
       resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 400);
+    }, 300);
 
   } catch (err) {
     console.error(err);
-    alert("Error during conversion: " + err.message);
+    alert("Gagal memproses video: " + err.message);
     progressContainer.classList.add('hidden');
   } finally {
     isConverting = false;
@@ -588,7 +469,7 @@ convertBtn.addEventListener('click', async () => {
 });
 
 // -------------------------------------------------------------
-// Interactive Motion Photo Simulator (Press & Hold / Hover)
+// Interactive Motion Photo Simulator (Touch & Hold for Mobile)
 // -------------------------------------------------------------
 function startMotionPlayback() {
   if (!simMotionVideo.src) return;
@@ -605,15 +486,13 @@ function stopMotionPlayback() {
   simStillImg.classList.remove('hidden');
 }
 
-// Mouse events
+// Mouse & Touch events
 simulatorBox.addEventListener('mouseenter', startMotionPlayback);
 simulatorBox.addEventListener('mouseleave', stopMotionPlayback);
-
-// Touch events for mobile
 simulatorBox.addEventListener('touchstart', (e) => {
   e.preventDefault();
   startMotionPlayback();
-});
+}, { passive: false });
 simulatorBox.addEventListener('touchend', stopMotionPlayback);
 
 // -------------------------------------------------------------
@@ -632,107 +511,12 @@ downloadResultBtn.addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 });
 
-// -------------------------------------------------------------
-// Fun Facts Rotator
-// -------------------------------------------------------------
-function displayFunFact(index) {
-  const facts = funFactsData[currentLang] || funFactsData['id'];
-  currentFactIndex = ((index % facts.length) + facts.length) % facts.length;
-
-  funfactText.classList.add('slide-out');
-  setTimeout(() => {
-    funfactText.textContent = facts[currentFactIndex];
-    funfactCounter.textContent = `${currentFactIndex + 1}/${facts.length}`;
-    funfactText.classList.remove('slide-out');
-    funfactText.classList.add('slide-in');
-  }, 200);
-}
-
-function startFactRotation() {
-  if (factInterval) clearInterval(factInterval);
-  factInterval = setInterval(() => {
-    displayFunFact(currentFactIndex + 1);
-  }, 10000);
-}
-
-factPrevBtn.addEventListener('click', () => {
-  displayFunFact(currentFactIndex - 1);
-  startFactRotation();
-});
-
-factNextBtn.addEventListener('click', () => {
-  displayFunFact(currentFactIndex + 1);
-  startFactRotation();
-});
-
-// -------------------------------------------------------------
-// Language & Theme Management
-// -------------------------------------------------------------
-const langToggleBtn = doc.getElementById('lang-toggle-btn');
-const langMenu = doc.getElementById('lang-menu');
-const currentFlag = doc.getElementById('current-flag');
-const currentLangCode = doc.getElementById('current-lang-code');
-
-langToggleBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  langMenu.classList.toggle('hidden');
-});
-
-doc.addEventListener('click', () => {
-  langMenu.classList.add('hidden');
-});
-
-langMenu.querySelectorAll('button[data-lang]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const lang = btn.getAttribute('data-lang');
-    switchLanguage(lang);
-  });
-});
-
-function switchLanguage(lang) {
-  currentLang = lang;
-  localStorage.setItem('motion_lang', lang);
-
-  currentFlag.textContent = lang === 'id' ? '🇮🇩' : '🇬🇧';
-  currentLangCode.textContent = lang.toUpperCase();
-
-  const t = translations[lang] || translations['id'];
-  
-  doc.getElementById('app-title').textContent = t.appTitle;
-  doc.getElementById('target-mode-label').textContent = t.modeLabel;
-  doc.getElementById('drop-text-title').textContent = t.dropTitle;
-  doc.getElementById('drop-browse-btn').textContent = t.dropBrowse;
-  doc.getElementById('drop-supported').textContent = t.dropSupported;
-  doc.getElementById('drop-paste').innerHTML = `${t.dropPasteHint} (<kbd class="px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/10 text-[10px]">Ctrl + V</kbd>)`;
-  
-  doc.getElementById('trimmer-title').textContent = t.trimmerTitle;
-  doc.getElementById('lbl-start-time').textContent = t.startTimeLabel;
-  doc.getElementById('lbl-end-time').textContent = t.endTimeLabel;
-  doc.getElementById('lbl-keyframe-title').textContent = t.keyframeSectionTitle;
-  doc.getElementById('lbl-keyframe-hint').textContent = t.keyframeHint;
-  btnKfStart.textContent = t.keyframeStartBtn;
-  btnKfMid.textContent = t.keyframeMidBtn;
-  btnKfEnd.textContent = t.keyframeEndBtn;
-
-  doc.getElementById('lbl-quality').textContent = t.qualityLabel;
-  doc.getElementById('lbl-resolution').textContent = t.resolutionLabel;
-
-  doc.getElementById('result-card-title').textContent = t.resultTitle;
-  doc.getElementById('guide-card-title').textContent = t.guideTitle;
-  doc.getElementById('funfact-header').textContent = t.funFactTitle;
-
-  updateModeCardStyles();
-  displayFunFact(currentFactIndex);
-}
-
-// Dark/Light Mode Theme Toggle
+// Theme Toggle
 const themeToggle = doc.getElementById('theme-toggle');
 themeToggle.addEventListener('click', () => {
   const isDark = doc.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
 });
 
-// Initialize
+// Init
 updateModeCardStyles();
-displayFunFact(0);
-startFactRotation();
