@@ -1,10 +1,10 @@
 /**
- * app.js — v4.8 Controller
+ * app.js — v4.9 Controller
  * Mobile-first Android Material 3 interface
  * Multi-language (8 languages) & Resolution Config (720p/1080p) & Video Cropper & Privacy
  */
 
-import { translations, languageList } from './i18n.js?v=4.8';
+import { translations, languageList } from './i18n.js?v=4.9';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
@@ -12,7 +12,7 @@ import {
   trimVideoClip,
   computeOutputSize,
   drawRotated
-} from './motionEngine.js?v=4.8';
+} from './motionEngine.js?v=4.9';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -119,6 +119,12 @@ const privacyScrim = doc.getElementById('privacy-scrim');
 const privacySheet = doc.getElementById('privacy-sheet');
 const privacyCloseBtn = doc.getElementById('privacy-close-btn');
 const btnPrivacyGotit = doc.getElementById('btn-privacy-gotit');
+
+// Guide Modal Elements
+const guideScrim = doc.getElementById('guide-scrim');
+const guideSheet = doc.getElementById('guide-sheet');
+const guideCloseBtn = doc.getElementById('guide-close-btn');
+const btnGuideGotit = doc.getElementById('btn-guide-gotit');
 
 // Video Editor Modal Elements
 const videoEditorScrim = doc.getElementById('video-editor-scrim');
@@ -310,6 +316,18 @@ function closePrivacySheet() {
   privacyScrim?.classList.remove('open');
   privacySheet?.classList.remove('open');
   privacySheet?.setAttribute('aria-hidden', 'true');
+}
+
+function openGuideSheet() {
+  guideScrim?.classList.add('open');
+  guideSheet?.classList.add('open');
+  guideSheet?.setAttribute('aria-hidden', 'false');
+}
+
+function closeGuideSheet() {
+  guideScrim?.classList.remove('open');
+  guideSheet?.classList.remove('open');
+  guideSheet?.setAttribute('aria-hidden', 'true');
 }
 
 // -------------------------------------------------------------
@@ -557,6 +575,19 @@ function applyTranslations() {
   setTxt('label-p3-desc', 'privacyP3Desc');
   setTxt('label-privacy-gotit', 'gotItBtn');
 
+  // Guide Bottom Sheet Labels
+  setTxt('label-guide-sheet-title', 'guideModalTitle');
+  setTxt('label-guide-sheet-sub', 'guideModalSub');
+  setTxt('label-g1-title', 'guideG1Title');
+  setTxt('label-g2-title', 'guideG2Title');
+  setTxt('label-g3-title', 'guideG3Title');
+  setTxt('label-g4-title', 'guideG4Title');
+  setHtml('label-guide-s1', 'guideStep1');
+  setHtml('label-guide-s2', 'guideStep2');
+  setHtml('label-guide-s3', 'guideStep3');
+  setHtml('label-guide-s4', 'guideStep4');
+  setTxt('label-guide-gotit', 'gotItBtn');
+
   updateModeUI();
   updateResolutionUI();
   updateRatioUI();
@@ -636,6 +667,7 @@ function loadVideo(file) {
     closeEditorSheet();
     closeVideoEditorSheet();
     closePrivacySheet();
+    closeGuideSheet();
   };
 
   sourceVideo.addEventListener('loadeddata', () => {
@@ -1375,12 +1407,11 @@ btnPrivacyGotit?.addEventListener('click', closePrivacySheet);
 // Guide Trigger (Feature Card #3)
 guideFeatureBtn?.addEventListener('click', (e) => {
   e.stopPropagation();
-  const guideDetails = doc.querySelector('details.guide');
-  if (guideDetails) {
-    guideDetails.open = true;
-    guideDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+  openGuideSheet();
 });
+guideCloseBtn?.addEventListener('click', closeGuideSheet);
+guideScrim?.addEventListener('click', closeGuideSheet);
+btnGuideGotit?.addEventListener('click', closeGuideSheet);
 
 // File Chooser Triggers
 pickBtn?.addEventListener('click', () => videoFileInput?.click());
@@ -1406,6 +1437,8 @@ changeVideoBtn?.addEventListener('click', (e) => {
   closeSheet();
   closeEditorSheet();
   closeVideoEditorSheet();
+  closePrivacySheet();
+  closeGuideSheet();
   videoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   tempVideoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   dropzone?.classList.remove('hidden');
@@ -1450,6 +1483,8 @@ convertBtn?.addEventListener('click', async () => {
   closeSheet();
   closeEditorSheet();
   closeVideoEditorSheet();
+  closePrivacySheet();
+  closeGuideSheet();
   sourceVideo.pause();
   previewBox?.classList.remove('playing');
   if (playIcon) playIcon.textContent = 'play_arrow';

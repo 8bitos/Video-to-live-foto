@@ -150,7 +150,36 @@
     .feature .icon { color: var(--primary); display: block; margin: 0 auto 6px; }
     .feature-interactive { cursor: pointer; transition: transform .15s, background .15s; }
     .feature-interactive:active { transform: scale(0.96); background: var(--secondary-container); }
-    .privacy-sheet { max-height: 85dvh; }
+    .privacy-sheet, .guide-sheet { max-height: 85dvh; }
+    .guide-card {
+      background: var(--surface-1);
+      border-radius: 16px;
+      padding: 12px 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .guide-card .icon {
+      color: var(--primary);
+      font-size: 22px;
+      min-width: 22px;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .guide-card div {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--on-surface-variant);
+      text-align: left;
+    }
+    .guide-card b {
+      color: var(--on-surface);
+      display: block;
+      margin-bottom: 2px;
+    }
     .privacy-callout {
       background: var(--surface-2); border-radius: 18px; padding: 14px 16px;
       display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px;
@@ -958,8 +987,59 @@
     </div>
   </section>
 
+  <!-- Guide Bottom Sheet -->
+  <div class="scrim" id="guide-scrim"></div>
+  <section class="sheet guide-sheet" id="guide-sheet" aria-hidden="true">
+    <div class="handle"></div>
+    <div class="sheet-head">
+      <div class="badge" style="background: rgba(103, 80, 164, .18); color: #d0bcff;">
+        <span class="icon">menu_book</span>
+      </div>
+      <div class="titles">
+        <h3 id="label-guide-sheet-title">Panduan Live Photo</h3>
+        <p id="label-guide-sheet-sub">Galeri Android, Google Photos &amp; TikTok</p>
+      </div>
+      <button class="icon-btn" id="guide-close-btn" aria-label="Tutup"><span class="icon">close</span></button>
+    </div>
+    <div class="guide-content" style="display: grid; gap: 12px; margin: 12px 0;">
+      <div class="guide-card">
+        <span class="icon">download</span>
+        <div>
+          <b id="label-g1-title">1. Simpan ke Galeri HP</b>
+          <span id="label-guide-s1">Tekan <b>Simpan ke HP</b>, file .jpg masuk ke folder Download / Galeri.</span>
+        </div>
+      </div>
+      <div class="guide-card">
+        <span class="icon">photo_library</span>
+        <div>
+          <b id="label-g2-title">2. Buka di Galeri &amp; Google Photos</b>
+          <span id="label-guide-s2">Buka di <b>Google Photos</b> atau Galeri bawaan — akan muncul ikon Motion/Live.</span>
+        </div>
+      </div>
+      <div class="guide-card">
+        <span class="icon">smartphone</span>
+        <div>
+          <b id="label-g3-title">3. Upload ke TikTok (Mode Foto)</b>
+          <span id="label-guide-s3">Di <b>TikTok</b>: buat postingan foto, pilih file tersebut, lalu aktifkan ikon <b>LIVE</b>.</span>
+        </div>
+      </div>
+      <div class="guide-card">
+        <span class="icon">share</span>
+        <div>
+          <b id="label-g4-title">4. Kirim Tanpa Kompresi</b>
+          <span id="label-guide-s4">Kalau mengirim ke HP lain, pakai <b>Quick Share</b> atau <b>WhatsApp → Dokumen</b> agar videonya tidak terhapus kompresi.</span>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-actions" style="margin-top: 14px;">
+      <button class="btn btn-filled w-full" id="btn-guide-gotit">
+        <span class="icon">check</span><span id="label-guide-gotit">Mengerti</span>
+      </button>
+    </div>
+  </section>
+
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.8"></script>
+  <script type="module" src="./app.js?v=4.9"></script>
 </body>
 </html>
