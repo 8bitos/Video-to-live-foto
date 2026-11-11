@@ -1,16 +1,20 @@
 /**
- * app.js — v4.0 Controller
+ * app.js — v4.1 Controller
  * Mobile-first Android Material 3 interface
- * 100% Client-side Motion Photo / Live Photo engine
+ * Multi-language (8 languages) & 100% Client-side Motion Photo engine
  */
 
+import { translations, languageList } from './i18n.js?v=4.1';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
   trimVideoClip 
-} from './motionEngine.js?v=4.0';
+} from './motionEngine.js?v=4.1';
 
 // Global State
+let currentLang = localStorage.getItem('motion_lang') || (navigator.language.startsWith('id') ? 'id' : 'en');
+if (!translations[currentLang]) currentLang = 'en';
+
 let currentVideoFile = null;
 let currentVideoUrl = null;
 let currentRotation = 0; // 0, 90, 180, 270
@@ -90,6 +94,11 @@ const resetToolBtn = doc.getElementById('reset-tool-btn');
 const sheetNote = doc.getElementById('sheet-note');
 const snackbar = doc.getElementById('snackbar');
 
+// Language Elements
+const langToggleBtn = doc.getElementById('lang-toggle-btn');
+const langMenu = doc.getElementById('lang-menu');
+const currentLangCode = doc.getElementById('current-lang-code');
+
 // Theme Elements
 const themeToggle = doc.getElementById('theme-toggle');
 const themeIcon = doc.getElementById('theme-icon');
@@ -97,6 +106,11 @@ const themeIcon = doc.getElementById('theme-icon');
 // -------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------
+function t(key) {
+  const dict = translations[currentLang] || translations.en;
+  return dict[key] || translations.en[key] || key;
+}
+
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
@@ -139,16 +153,114 @@ function updateModeUI() {
   if (cardModeTiktok) cardModeTiktok.classList.toggle('active', mode === 'tiktok');
 
   if (mode === 'android') {
-    if (modeHint) modeHint.textContent = '1 file .jpg yang bergerak di Galeri Samsung, Google Photos & TikTok (Mode Foto → LIVE).';
-    if (convertBtnText) convertBtnText.textContent = 'Buat Live Photo (.jpg)';
+    if (modeHint) modeHint.textContent = t('modeHintAndroid');
+    if (convertBtnText) convertBtnText.textContent = t('convertBtnAndroid');
   } else {
-    if (modeHint) modeHint.textContent = 'Klip video looping (.mp4) mulus untuk TikTok & status WhatsApp.';
-    if (convertBtnText) convertBtnText.textContent = 'Buat Video MP4 (.mp4)';
+    if (modeHint) modeHint.textContent = t('modeHintTiktok');
+    if (convertBtnText) convertBtnText.textContent = t('convertBtnTiktok');
   }
 }
 
 // -------------------------------------------------------------
-// Video Loading
+// Internationalization (i18n) Setup
+// -------------------------------------------------------------
+function initLanguageMenu() {
+  if (!langMenu) return;
+  langMenu.innerHTML = '';
+  languageList.forEach((lang) => {
+    const item = doc.createElement('button');
+    item.type = 'button';
+    item.className = `lang-item ${lang.code === currentLang ? 'active' : ''}`;
+    item.innerHTML = `
+      <div class="left">
+        <span class="flag">${lang.flag}</span>
+        <span>${lang.name}</span>
+      </div>
+      ${lang.code === currentLang ? '<span class="icon check">check</span>' : ''}
+    `;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setLanguage(lang.code);
+      langMenu.classList.add('hidden');
+    });
+    langMenu.appendChild(item);
+  });
+}
+
+function setLanguage(langCode) {
+  if (!translations[langCode]) return;
+  currentLang = langCode;
+  localStorage.setItem('motion_lang', langCode);
+
+  const langInfo = languageList.find(l => l.code === langCode);
+  if (currentLangCode) currentLangCode.textContent = langCode.toUpperCase();
+  doc.documentElement.lang = langCode;
+  doc.documentElement.dir = (langInfo && langInfo.dir === 'rtl') ? 'rtl' : 'ltr';
+
+  applyTranslations();
+  initLanguageMenu();
+}
+
+function applyTranslations() {
+  const setTxt = (id, key) => {
+    const el = doc.getElementById(id);
+    if (el) el.textContent = t(key);
+  };
+  const setHtml = (id, key) => {
+    const el = doc.getElementById(id);
+    if (el) el.innerHTML = t(key);
+  };
+
+  setTxt('app-title', 'appTitle');
+  setTxt('app-subtitle', 'appSubtitle');
+  setTxt('hero-title', 'heroTitle');
+  setHtml('hero-desc', 'heroDesc');
+  setTxt('pick-btn-text', 'pickVideoBtn');
+  setTxt('feat-1', 'feat1');
+  setTxt('feat-2', 'feat2');
+  setTxt('feat-3', 'feat3');
+
+  setTxt('label-format-title', 'formatSectionTitle');
+  setTxt('label-mode-android', 'modeLivePhoto');
+  setTxt('label-mode-tiktok', 'modeVideo');
+
+  setTxt('label-duration-title', 'clipDurationTitle');
+  setTxt('label-slider-start', 'sliderStartLabel');
+  setTxt('label-slider-end', 'sliderEndLabel');
+
+  setTxt('label-cover-title', 'coverPhotoTitle');
+  setTxt('btn-kf-start', 'btnKfStart');
+  setTxt('btn-kf-mid', 'btnKfMid');
+  setTxt('btn-kf-end', 'btnKfEnd');
+
+  setTxt('guide-summary', 'guideSummary');
+  setHtml('guide-step-1', 'guideStep1');
+  setHtml('guide-step-2', 'guideStep2');
+  setHtml('guide-step-3', 'guideStep3');
+  setHtml('guide-step-4', 'guideStep4');
+
+  setTxt('sim-hint-text', 'simHint');
+  setTxt('download-btn-label', 'saveToPhone');
+  setTxt('share-btn-text', 'shareBtn');
+  setTxt('reset-btn-text', 'editAgain');
+
+  updateModeUI();
+  updateRotation();
+}
+
+langToggleBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  langMenu?.classList.toggle('hidden');
+});
+
+doc.addEventListener('click', (e) => {
+  if (langMenu && !langMenu.contains(e.target) && e.target !== langToggleBtn) {
+    langMenu.classList.add('hidden');
+  }
+});
+
+// -------------------------------------------------------------
+// Video Loading & Preview Management
 // -------------------------------------------------------------
 function loadVideo(file) {
   if (!file) return;
@@ -157,7 +269,6 @@ function loadVideo(file) {
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = URL.createObjectURL(file);
   currentRotation = 0;
-  updateRotation();
 
   if (fileNameBadge) fileNameBadge.textContent = file.name;
   sourceVideo.src = currentVideoUrl;
@@ -182,18 +293,25 @@ function loadVideo(file) {
     sliderKeyframe.value = "0";
 
     updateSliderUI();
-    renderKeyframePreview(0);
+    updateRotation();
+
+    // Fix blank video screen on mobile: seek slightly above 0 to render initial frame
+    try {
+      sourceVideo.currentTime = 0.001;
+    } catch (_) {}
 
     dropzone?.classList.add('hidden');
     trimmerPanel?.classList.remove('hidden');
     actionBar?.classList.remove('hidden');
     closeSheet();
-
-    sourceVideo.currentTime = 0;
   };
 
+  sourceVideo.addEventListener('loadeddata', () => {
+    renderKeyframePreview(0);
+  }, { once: true });
+
   sourceVideo.onerror = () => {
-    showSnackbar("Video tidak dapat diputar. Coba pilih file MP4 standar.");
+    showSnackbar(t('errFormat'));
   };
 }
 
@@ -202,9 +320,19 @@ function loadVideo(file) {
 // -------------------------------------------------------------
 function updateRotation() {
   if (rotateBtnText) rotateBtnText.textContent = `${currentRotation}°`;
-  if (sourceVideo) {
-    sourceVideo.style.transform = `rotate(${currentRotation}deg)`;
+
+  if (sourceVideo && previewBox) {
+    if (currentRotation === 90 || currentRotation === 270) {
+      // Calculate scale so rotated video fits within container bounds without clipping
+      const pw = previewBox.clientWidth || 360;
+      const ph = previewBox.clientHeight || 280;
+      const scale = Math.min(pw / ph, ph / pw, 1);
+      sourceVideo.style.transform = `rotate(${currentRotation}deg) scale(${scale.toFixed(3)})`;
+    } else {
+      sourceVideo.style.transform = `rotate(${currentRotation}deg) scale(1)`;
+    }
   }
+
   const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
   renderKeyframePreview(kf);
 }
@@ -270,11 +398,13 @@ doc.querySelectorAll('.dur-preset-btn').forEach(btn => {
   });
 });
 
-// Render Still Frame to Canvas
+// Render Still Frame to Canvas without Blanking
 function renderKeyframePreview(timeSec) {
-  if (!sourceVideo || !keyframeCanvas) return;
+  if (!sourceVideo || !keyframeCanvas || sourceVideo.readyState < 1) return;
+
   extractCoverFrame(sourceVideo, timeSec, 0.85, 200, currentRotation)
     .then(({ dataUrl, width, height }) => {
+      if (!dataUrl) return;
       keyframeCanvas.width = width;
       keyframeCanvas.height = height;
       const ctx = keyframeCanvas.getContext('2d');
@@ -458,11 +588,11 @@ convertBtn?.addEventListener('click', async () => {
     const targetMode = getSelectedMode();
 
     // 1. Extract Cover Photo Frame (720p / 1280 max for mobile balance)
-    updateProgress(15, "1/3. Mengekstrak frame foto utama...");
+    updateProgress(15, t('progressExtractCover'));
     const coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation);
 
     // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264)
-    updateProgress(35, `2/3. Memproses klip video (${duration.toFixed(1)}s)...`);
+    updateProgress(35, `${t('progressEncodeVideo')} (${duration.toFixed(1)}s)`);
     const videoClipBytes = await trimVideoClip(
       sourceVideo,
       startTime,
@@ -471,12 +601,12 @@ convertBtn?.addEventListener('click', async () => {
       currentRotation,
       (p) => {
         const mapped = 35 + Math.round(p * 0.50);
-        updateProgress(mapped, `2/3. Mengode frame video (${Math.round(p)}%)...`);
+        updateProgress(mapped, `${t('progressEncodingFrames')} (${Math.round(p)}%)...`);
       }
     );
 
     // 3. Inject Metadata
-    updateProgress(88, "3/3. Menggabungkan file & metadata...");
+    updateProgress(88, t('progressInjectMeta'));
     const timestampUs = Math.round((keyframeTime - startTime) * 1_000_000);
     const baseName = currentVideoFile.name.replace(/\.[^/.]+$/, "");
     const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -502,9 +632,9 @@ convertBtn?.addEventListener('click', async () => {
         clipVideoUrl: URL.createObjectURL(clipVideoBlob)
       };
 
-      if (resultTitle) resultTitle.textContent = "Live Photo Siap!";
-      if (downloadBtnLabel) downloadBtnLabel.textContent = `Simpan Live Photo (.jpg)`;
-      if (sheetNote) sheetNote.textContent = 'Simpan file ke galeri. Buka di Galeri Android / Google Photos untuk melihat gerakan, atau unggah ke TikTok (Mode Foto) dan aktifkan ikon LIVE.';
+      if (resultTitle) resultTitle.textContent = t('resultTitleAndroid');
+      if (downloadBtnLabel) downloadBtnLabel.textContent = `${t('saveToPhone')} (.jpg)`;
+      if (sheetNote) sheetNote.textContent = t('noteAndroid');
 
     } else {
       // Looping MP4 Video
@@ -522,14 +652,14 @@ convertBtn?.addEventListener('click', async () => {
         clipVideoUrl: URL.createObjectURL(clipVideoBlob)
       };
 
-      if (resultTitle) resultTitle.textContent = "Video TikTok Siap!";
-      if (downloadBtnLabel) downloadBtnLabel.textContent = `Simpan Video (.mp4)`;
-      if (sheetNote) sheetNote.textContent = 'Klip video MP4 looping siap diunggah langsung ke TikTok atau status WhatsApp.';
+      if (resultTitle) resultTitle.textContent = t('resultTitleTiktok');
+      if (downloadBtnLabel) downloadBtnLabel.textContent = `${t('saveToPhone')} (.mp4)`;
+      if (sheetNote) sheetNote.textContent = t('noteTiktok');
     }
 
-    updateProgress(100, "Selesai!");
+    updateProgress(100, t('progressDone'));
 
-    // Display Result Bottom Sheet
+    // Display Result Bottom Sheet with validated non-blank previews
     setTimeout(() => {
       progressContainer?.classList.add('hidden');
 
@@ -537,21 +667,24 @@ convertBtn?.addEventListener('click', async () => {
         resTotalSize.textContent = `${formatBytes(generatedResult.totalSize)} • ${duration.toFixed(1)}s • 30fps`;
       }
 
-      if (simStillImg) simStillImg.src = generatedResult.coverDataUrl;
+      if (simStillImg) {
+        simStillImg.src = generatedResult.coverDataUrl;
+        simStillImg.classList.remove('hidden');
+      }
+
       if (simMotionVideo) {
         simMotionVideo.src = generatedResult.clipVideoUrl;
         simMotionVideo.load();
+        simMotionVideo.currentTime = 0;
+        simMotionVideo.classList.add('hidden');
       }
-
-      simStillImg?.classList.remove('hidden');
-      simMotionVideo?.classList.add('hidden');
 
       openSheet();
     }, 250);
 
   } catch (err) {
     console.error("Conversion error:", err);
-    showSnackbar("Gagal memproses video: " + (err.message || err));
+    showSnackbar(t('errProcess') + (err.message || err));
     progressContainer?.classList.add('hidden');
   } finally {
     isConverting = false;
@@ -568,7 +701,10 @@ function startMotionPlayback() {
   simStillImg?.classList.add('hidden');
   simMotionVideo.classList.remove('hidden');
   simMotionVideo.currentTime = 0;
-  simMotionVideo.play().catch(() => {});
+  const p = simMotionVideo.play();
+  if (p !== undefined) {
+    p.catch(() => {});
+  }
 }
 
 function stopMotionPlayback() {
@@ -602,7 +738,7 @@ function downloadFile() {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 5000);
-  showSnackbar(`Tersimpan: ${generatedResult.filename}`);
+  showSnackbar(`${t('savedSnackbar')}${generatedResult.filename}`);
 }
 
 downloadResultBtn?.addEventListener('click', downloadFile);
@@ -620,7 +756,7 @@ shareResultBtn?.addEventListener('click', async () => {
       await navigator.share({
         files: [file],
         title: generatedResult.filename,
-        text: 'Live Photo dibuat dengan Motion Photo Converter'
+        text: t('shareText')
       });
       return;
     }
@@ -633,6 +769,7 @@ shareResultBtn?.addEventListener('click', async () => {
   }
 
   // Fallback to download if Web Share API is unavailable
+  showSnackbar(t('shareFallback'));
   downloadFile();
 });
 
@@ -660,6 +797,13 @@ window.addEventListener('scroll', () => {
   }
 }, { passive: true });
 
-// Initialize UI
-updateModeUI();
+// Window resize updates video rotation scaling if needed
+window.addEventListener('resize', () => {
+  if (currentRotation === 90 || currentRotation === 270) {
+    updateRotation();
+  }
+});
+
+// Initialize i18n & Theme
+setLanguage(currentLang);
 updateThemeIcon();

@@ -253,12 +253,13 @@ export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDim
   const ctx = canvas.getContext('2d', { alpha: false });
   drawRotated(ctx, video, rotation, w, h);
 
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
   const blob = await new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Gagal membuat foto sampul."))), 'image/jpeg', quality);
   });
   const uint8Array = new Uint8Array(await blob.arrayBuffer());
   canvas.width = canvas.height = 0; // release GPU memory
-  return { blob, uint8Array, width: w, height: h };
+  return { blob, uint8Array, width: w, height: h, dataUrl };
 }
 
 /* ------------------------------------------------------------------ */
