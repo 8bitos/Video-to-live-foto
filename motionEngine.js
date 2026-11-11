@@ -201,7 +201,7 @@ export function waitSeek(video, time, timeoutMs = 1500) {
  * @param {string} aspectRatio 'original' | '9:16' | '1:1' | '4:5' | '16:9'
  * @param {number} maxDim
  */
-export function computeOutputSize(video, rotation, aspectRatio = 'original', maxDim = MAX_DIM) {
+export function computeOutputSize(video, rotation, aspectRatio = 'original', maxDim = MAX_DIM, framing = null) {
   const srcW = video.videoWidth || 1280;
   const srcH = video.videoHeight || 720;
   const rot90 = rotation === 90 || rotation === 270;
@@ -213,28 +213,44 @@ export function computeOutputSize(video, rotation, aspectRatio = 'original', max
   else if (aspectRatio === '1:1') targetAspect = 1.0;
   else if (aspectRatio === '4:5') targetAspect = 4 / 5;
   else if (aspectRatio === '16:9') targetAspect = 16 / 9;
+  else if (typeof aspectRatio === 'string' && aspectRatio.includes(':')) {
+    const [rw, rh] = aspectRatio.split(':').map(Number);
+    if (rw > 0 && rh > 0) targetAspect = rw / rh;
+  }
 
-  let cropW, cropH, cropX, cropY;
+  let baseCropW, baseCropH;
   const srcAspect = uprightW / uprightH;
 
   if (Math.abs(srcAspect - targetAspect) < 0.005) {
-    cropW = uprightW;
-    cropH = uprightH;
-    cropX = 0;
-    cropY = 0;
+    baseCropW = uprightW;
+    baseCropH = uprightH;
   } else if (srcAspect > targetAspect) {
     // Video is wider than target aspect ratio -> crop left & right
-    cropH = uprightH;
-    cropW = uprightH * targetAspect;
-    cropX = (uprightW - cropW) / 2;
-    cropY = 0;
+    baseCropH = uprightH;
+    baseCropW = uprightH * targetAspect;
   } else {
     // Video is taller than target aspect ratio -> crop top & bottom
-    cropW = uprightW;
-    cropH = uprightW / targetAspect;
-    cropX = 0;
-    cropY = (uprightH - cropH) / 2;
+    baseCropW = uprightW;
+    baseCropH = uprightW / targetAspect;
   }
+
+  const zoom = (framing && framing.zoom && framing.zoom >= 1) ? framing.zoom : 1.0;
+  const panX = (framing && typeof framing.panX === 'number') ? framing.panX : 0;
+  const panY = (framing && typeof framing.panY === 'number') ? framing.panY : 0;
+
+  // With zoom applied, the crop window shrinks in source coordinates
+  const cropW = Math.max(2, baseCropW / zoom);
+  const cropH = Math.max(2, baseCropH / zoom);
+
+  // Center position with pan shifts
+  const centerCropX = (uprightW - cropW) / 2;
+  const centerCropY = (uprightH - cropH) / 2;
+
+  const maxShiftX = (uprightW - cropW) / 2;
+  const maxShiftY = (uprightH - cropH) / 2;
+
+  const cropX = Math.max(0, Math.min(uprightW - cropW, centerCropX + (panX / 100) * maxShiftX));
+  const cropY = Math.max(0, Math.min(uprightH - cropH, centerCropY + (panY / 100) * maxShiftY));
 
   let outW = cropW;
   let outH = cropH;
@@ -312,11 +328,11 @@ export function drawRotated(ctx, video, rotation, w, h, cropInfo = null) {
  * Extracts an upright still JPEG from the video at `timestamp`, cropped to `aspectRatio`.
  * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string }>}
  */
-export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDimension = MAX_DIM, rotation = 0, aspectRatio = 'original') {
+export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDimension = MAX_DIM, rotation = 0, aspectRatio = 'original', framing = null) {
   video.pause();
   await waitSeek(video, timestamp);
 
-  const cropInfo = computeOutputSize(video, rotation, aspectRatio, maxDimension);
+  const cropInfo = computeOutputSize(video, rotation, aspectRatio, maxDimension, framing);
   const { w, h } = cropInfo;
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -627,12 +643,12 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
  * @param {string} aspectRatio 'original' | '9:16' | '1:1' | '4:5' | '16:9'
  * @returns {Promise<Uint8Array>}
  */
-export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}, aspectRatio = 'original') {
+export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}, aspectRatio = 'original', framing = null) {
   video.pause();
   video.muted = true;
   video.playsInline = true;
 
-  const cropInfo = computeOutputSize(video, rotation, aspectRatio);
+  const cropInfo = computeOutputSize(video, rotation, aspectRatio, MAX_DIM, framing);
   const { w, h } = cropInfo;
 
   if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && Mp4Muxer) {

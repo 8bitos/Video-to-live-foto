@@ -1,16 +1,18 @@
 /**
- * app.js — v4.5 Controller
+ * app.js — v4.6 Controller
  * Mobile-first Android Material 3 interface
- * Multi-language (8 languages) & Cover Studio & Custom Ratio & Cover Editor / Cropper
+ * Multi-language (8 languages) & Cover Studio & Custom Ratio & Video Cropper & Cover Editor
  */
 
-import { translations, languageList } from './i18n.js?v=4.5';
+import { translations, languageList } from './i18n.js?v=4.6';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
   processCustomCoverImage,
-  trimVideoClip 
-} from './motionEngine.js?v=4.5';
+  trimVideoClip,
+  computeOutputSize,
+  drawRotated
+} from './motionEngine.js?v=4.6';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -25,6 +27,18 @@ let currentRotation = 0; // 0, 90, 180, 270
 let currentAspectRatio = 'original'; // 'original' | '9:16' | '1:1' | '4:5' | '16:9' | 'W:H'
 let isConverting = false;
 let snackbarTimeout = null;
+
+// Video Framing State (Zoom, Pan X, Pan Y)
+let videoFraming = {
+  zoom: 1.0,
+  panX: 0,
+  panY: 0
+};
+let tempVideoFraming = {
+  zoom: 1.0,
+  panX: 0,
+  panY: 0
+};
 
 // Custom Cover State
 let customCoverState = null; // { blob, uint8Array, width, height, dataUrl, rawFile, active: true }
@@ -65,6 +79,7 @@ const previewViewport = doc.getElementById('preview-viewport');
 const sourceVideo = doc.getElementById('source-video');
 const rotateVideoBtn = doc.getElementById('rotate-video-btn');
 const rotateBtnText = doc.getElementById('rotate-btn-text');
+const quickCropVideoBtn = doc.getElementById('quick-crop-video-btn');
 
 const playPauseBtn = doc.getElementById('play-pause-btn');
 const playIcon = doc.getElementById('play-icon');
@@ -80,6 +95,22 @@ const customRatioBox = doc.getElementById('custom-ratio-box');
 const customRatioW = doc.getElementById('custom-ratio-w');
 const customRatioH = doc.getElementById('custom-ratio-h');
 const btnApplyCustomRatio = doc.getElementById('btn-apply-custom-ratio');
+const editVideoBtn = doc.getElementById('edit-video-btn');
+
+// Video Editor Modal Elements
+const videoEditorScrim = doc.getElementById('video-editor-scrim');
+const videoEditorSheet = doc.getElementById('video-editor-sheet');
+const videoEditorCloseBtn = doc.getElementById('video-editor-close-btn');
+const videoEditorCanvasContainer = doc.getElementById('video-editor-canvas-container');
+const interactiveVideoCanvas = doc.getElementById('interactive-video-canvas');
+const videoEditorZoom = doc.getElementById('video-editor-zoom');
+const valVideoZoom = doc.getElementById('val-video-zoom');
+const videoEditorPanX = doc.getElementById('video-editor-panx');
+const valVideoPanX = doc.getElementById('val-video-panx');
+const videoEditorPanY = doc.getElementById('video-editor-pany');
+const valVideoPanY = doc.getElementById('val-video-pany');
+const videoEditorResetBtn = doc.getElementById('video-editor-reset-btn');
+const videoEditorApplyBtn = doc.getElementById('video-editor-apply-btn');
 
 // Mode Selection
 const cardModeAndroid = doc.getElementById('card-mode-android');
@@ -301,7 +332,7 @@ function updateRatioUI() {
       })
       .catch(console.error);
   } else {
-    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
     renderKeyframePreview(kf);
   }
 }
@@ -400,6 +431,8 @@ function applyTranslations() {
   setTxt('label-ratio-169', 'ratioLandscape');
   setTxt('label-ratio-custom', 'ratioCustom');
   setTxt('label-apply-custom-ratio', 'applyBtn');
+  setTxt('label-edit-video', 'editVideoBtn');
+  setTxt('label-quick-crop', 'editVideoBtn');
 
   setTxt('label-duration-title', 'clipDurationTitle');
   setTxt('label-slider-start', 'sliderStartLabel');
@@ -418,6 +451,15 @@ function applyTranslations() {
   setTxt('label-edit-cover', 'editCoverBtn');
   setTxt('label-upload-cover', 'btnUploadCustomCover');
   setTxt('label-reset-cover', 'btnResetVideoCover');
+
+  // Video Editor Modal Labels
+  setTxt('label-video-editor-title', 'videoEditorModalTitle');
+  setTxt('label-video-editor-hint', 'videoDragHint');
+  setTxt('label-video-zoom', 'zoomLabel');
+  setTxt('label-video-panx', 'panXLabel');
+  setTxt('label-video-pany', 'panYLabel');
+  setTxt('label-video-editor-reset', 'resetBtn');
+  setTxt('label-video-editor-apply', 'applyBtn');
 
   // Cover Editor Modal Labels
   setTxt('label-editor-title', 'editCoverModalTitle');
@@ -475,6 +517,8 @@ function loadVideo(file) {
   currentVideoUrl = URL.createObjectURL(file);
   currentRotation = 0;
   currentAspectRatio = 'original';
+  videoFraming = { zoom: 1.0, panX: 0, panY: 0 };
+  tempVideoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   customCoverState = null;
   resetCustomCoverUI();
 
@@ -520,6 +564,7 @@ function loadVideo(file) {
     actionBar?.classList.remove('hidden');
     closeSheet();
     closeEditorSheet();
+    closeVideoEditorSheet();
   };
 
   sourceVideo.addEventListener('loadeddata', () => {
@@ -538,18 +583,22 @@ function updateRotation() {
   if (rotateBtnText) rotateBtnText.textContent = `${currentRotation}°`;
 
   if (sourceVideo && previewBox) {
+    let baseScale = 1;
     if (currentRotation === 90 || currentRotation === 270) {
       const pw = previewBox.clientWidth || 360;
       const ph = previewBox.clientHeight || 280;
-      const scale = Math.min(pw / ph, ph / pw, 1);
-      sourceVideo.style.transform = `rotate(${currentRotation}deg) scale(${scale.toFixed(3)})`;
-    } else {
-      sourceVideo.style.transform = `rotate(${currentRotation}deg) scale(1)`;
+      baseScale = Math.min(pw / ph, ph / pw, 1);
     }
+    const z = (videoFraming && videoFraming.zoom) || 1.0;
+    const px = (videoFraming && videoFraming.panX) || 0;
+    const py = (videoFraming && videoFraming.panY) || 0;
+
+    sourceVideo.style.transform = `rotate(${currentRotation}deg) scale(${(baseScale * z).toFixed(3)})`;
+    sourceVideo.style.objectPosition = `${50 + (px / 2)}% ${50 + (py / 2)}%`;
   }
 
   if (!customCoverState || !customCoverState.active) {
-    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
     renderKeyframePreview(kf);
   }
 }
@@ -637,7 +686,7 @@ function renderKeyframePreview(timeSec) {
 
   if (!sourceVideo || !keyframeCanvas || sourceVideo.readyState < 1) return;
 
-  extractCoverFrame(sourceVideo, timeSec, 0.88, 720, currentRotation, currentAspectRatio)
+  extractCoverFrame(sourceVideo, timeSec, 0.88, 720, currentRotation, currentAspectRatio, videoFraming)
     .then(({ dataUrl, width, height }) => {
       if (!dataUrl) return;
       currentCoverDataUrl = dataUrl;
@@ -827,8 +876,8 @@ function openEditorSheet() {
   } else if (currentCoverDataUrl) {
     img.src = currentCoverDataUrl;
   } else {
-    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
-    extractCoverFrame(sourceVideo, kf, 0.92, 1280, currentRotation, currentAspectRatio)
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
+    extractCoverFrame(sourceVideo, kf, 0.92, 1280, currentRotation, currentAspectRatio, videoFraming)
       .then(res => { img.src = res.dataUrl; })
       .catch(console.error);
   }
@@ -1026,6 +1075,148 @@ editorCloseBtn?.addEventListener('click', closeEditorSheet);
 editorScrim?.addEventListener('click', closeEditorSheet);
 
 // -------------------------------------------------------------
+// Video Framing Editor & Crop (Zoom, Pan X, Pan Y)
+// -------------------------------------------------------------
+function openVideoEditorSheet() {
+  if (!sourceVideo || !currentVideoFile) return;
+
+  tempVideoFraming = { ...videoFraming };
+  syncVideoEditorSliders();
+
+  videoEditorScrim?.classList.add('open');
+  videoEditorSheet?.classList.add('open');
+  videoEditorSheet?.setAttribute('aria-hidden', 'false');
+
+  renderVideoEditorCanvas();
+}
+
+function closeVideoEditorSheet() {
+  videoEditorScrim?.classList.remove('open');
+  videoEditorSheet?.classList.remove('open');
+  videoEditorSheet?.setAttribute('aria-hidden', 'true');
+}
+
+function syncVideoEditorSliders() {
+  if (videoEditorZoom) {
+    videoEditorZoom.value = tempVideoFraming.zoom;
+    if (valVideoZoom) valVideoZoom.textContent = `${tempVideoFraming.zoom.toFixed(1)}x`;
+  }
+  if (videoEditorPanX) {
+    videoEditorPanX.value = tempVideoFraming.panX;
+    if (valVideoPanX) valVideoPanX.textContent = `${tempVideoFraming.panX}%`;
+  }
+  if (videoEditorPanY) {
+    videoEditorPanY.value = tempVideoFraming.panY;
+    if (valVideoPanY) valVideoPanY.textContent = `${tempVideoFraming.panY}%`;
+  }
+
+  updateSliderProgress(videoEditorZoom);
+  updateSliderProgress(videoEditorPanX);
+  updateSliderProgress(videoEditorPanY);
+}
+
+function renderVideoEditorCanvas() {
+  if (!sourceVideo || !interactiveVideoCanvas || sourceVideo.readyState < 1) return;
+
+  const cropInfo = computeOutputSize(sourceVideo, currentRotation, currentAspectRatio, 600, tempVideoFraming);
+  const { w, h } = cropInfo;
+
+  interactiveVideoCanvas.width = w;
+  interactiveVideoCanvas.height = h;
+
+  const ctx = interactiveVideoCanvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, w, h);
+  drawRotated(ctx, sourceVideo, currentRotation, w, h, cropInfo);
+}
+
+// Touch & Drag on Interactive Video Canvas
+let isDraggingVideo = false;
+let startVideoDragX = 0;
+let startVideoDragY = 0;
+let initialVideoPanX = 0;
+let initialVideoPanY = 0;
+
+videoEditorCanvasContainer?.addEventListener('pointerdown', (e) => {
+  isDraggingVideo = true;
+  startVideoDragX = e.clientX;
+  startVideoDragY = e.clientY;
+  initialVideoPanX = tempVideoFraming.panX;
+  initialVideoPanY = tempVideoFraming.panY;
+  try { videoEditorCanvasContainer.setPointerCapture(e.pointerId); } catch (_) {}
+});
+
+videoEditorCanvasContainer?.addEventListener('pointermove', (e) => {
+  if (!isDraggingVideo) return;
+  const dx = e.clientX - startVideoDragX;
+  const dy = e.clientY - startVideoDragY;
+  const containerW = videoEditorCanvasContainer.clientWidth || 300;
+  const containerH = videoEditorCanvasContainer.clientHeight || 250;
+
+  let newPanX = initialVideoPanX + (dx / containerW) * 100;
+  let newPanY = initialVideoPanY + (dy / containerH) * 100;
+
+  tempVideoFraming.panX = Math.max(-100, Math.min(100, Math.round(newPanX)));
+  tempVideoFraming.panY = Math.max(-100, Math.min(100, Math.round(newPanY)));
+
+  if (videoEditorPanX) videoEditorPanX.value = tempVideoFraming.panX;
+  if (valVideoPanX) valVideoPanX.textContent = `${tempVideoFraming.panX}%`;
+  if (videoEditorPanY) videoEditorPanY.value = tempVideoFraming.panY;
+  if (valVideoPanY) valVideoPanY.textContent = `${tempVideoFraming.panY}%`;
+
+  updateSliderProgress(videoEditorPanX);
+  updateSliderProgress(videoEditorPanY);
+  renderVideoEditorCanvas();
+});
+
+videoEditorCanvasContainer?.addEventListener('pointerup', (e) => {
+  isDraggingVideo = false;
+  try { videoEditorCanvasContainer.releasePointerCapture(e.pointerId); } catch (_) {}
+});
+
+videoEditorZoom?.addEventListener('input', () => {
+  if (!videoEditorZoom) return;
+  tempVideoFraming.zoom = parseFloat(videoEditorZoom.value || '1');
+  if (valVideoZoom) valVideoZoom.textContent = `${tempVideoFraming.zoom.toFixed(2)}x`;
+  updateSliderProgress(videoEditorZoom);
+  renderVideoEditorCanvas();
+});
+
+videoEditorPanX?.addEventListener('input', () => {
+  if (!videoEditorPanX) return;
+  tempVideoFraming.panX = parseInt(videoEditorPanX.value || '0', 10);
+  if (valVideoPanX) valVideoPanX.textContent = `${tempVideoFraming.panX}%`;
+  updateSliderProgress(videoEditorPanX);
+  renderVideoEditorCanvas();
+});
+
+videoEditorPanY?.addEventListener('input', () => {
+  if (!videoEditorPanY) return;
+  tempVideoFraming.panY = parseInt(videoEditorPanY.value || '0', 10);
+  if (valVideoPanY) valVideoPanY.textContent = `${tempVideoFraming.panY}%`;
+  updateSliderProgress(videoEditorPanY);
+  renderVideoEditorCanvas();
+});
+
+videoEditorResetBtn?.addEventListener('click', () => {
+  tempVideoFraming = { zoom: 1.0, panX: 0, panY: 0 };
+  syncVideoEditorSliders();
+  renderVideoEditorCanvas();
+});
+
+videoEditorApplyBtn?.addEventListener('click', () => {
+  videoFraming = { ...tempVideoFraming };
+  updateRotation();
+  closeVideoEditorSheet();
+  showSnackbar(t('videoFramingApplied'));
+});
+
+editVideoBtn?.addEventListener('click', openVideoEditorSheet);
+quickCropVideoBtn?.addEventListener('click', openVideoEditorSheet);
+videoEditorCloseBtn?.addEventListener('click', closeVideoEditorSheet);
+videoEditorScrim?.addEventListener('click', closeVideoEditorSheet);
+
+// -------------------------------------------------------------
 // Play / Pause Video Controller
 // -------------------------------------------------------------
 function togglePlayPause() {
@@ -1102,6 +1293,9 @@ changeVideoBtn?.addEventListener('click', (e) => {
   actionBar?.classList.add('hidden');
   closeSheet();
   closeEditorSheet();
+  closeVideoEditorSheet();
+  videoFraming = { zoom: 1.0, panX: 0, panY: 0 };
+  tempVideoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   dropzone?.classList.remove('hidden');
   if (videoFileInput) videoFileInput.value = '';
 });
@@ -1142,6 +1336,7 @@ convertBtn?.addEventListener('click', async () => {
   progressContainer?.classList.remove('hidden');
   closeSheet();
   closeEditorSheet();
+  closeVideoEditorSheet();
   sourceVideo.pause();
   previewBox?.classList.remove('playing');
   if (playIcon) playIcon.textContent = 'play_arrow';
@@ -1161,16 +1356,16 @@ convertBtn?.addEventListener('click', async () => {
   try {
     const targetMode = getSelectedMode();
 
-    // 1. Prepare Cover Photo (Custom/Edited image OR extracted video frame with aspect ratio crop)
+    // 1. Prepare Cover Photo (Custom/Edited image OR extracted video frame with aspect ratio crop & video framing)
     updateProgress(15, t('progressExtractCover'));
     let coverResult;
     if (customCoverState && customCoverState.active) {
       coverResult = customCoverState;
     } else {
-      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation, currentAspectRatio);
+      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation, currentAspectRatio, videoFraming);
     }
 
-    // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264 with identical crop)
+    // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264 with identical crop & framing)
     updateProgress(35, `${t('progressEncodeVideo')} (${duration.toFixed(1)}s)`);
     const videoClipBytes = await trimVideoClip(
       sourceVideo,
@@ -1182,7 +1377,8 @@ convertBtn?.addEventListener('click', async () => {
         const mapped = 35 + Math.round(p * 0.50);
         updateProgress(mapped, `${t('progressEncodingFrames')} (${Math.round(p)}%)...`);
       },
-      currentAspectRatio
+      currentAspectRatio,
+      videoFraming
     );
 
     // 3. Inject Metadata

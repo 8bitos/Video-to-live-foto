@@ -187,13 +187,17 @@
     .preview .play:active { transform: scale(.92); }
     .preview .play .icon { font-size: 36px; }
     .preview.playing .play { opacity: 0; pointer-events: none; }
-    .preview .rotate {
-      position: absolute; right: 12px; bottom: 10px; height: 36px; padding: 0 12px 0 10px;
+    .preview-tools {
+      position: absolute; right: 12px; bottom: 10px; display: flex; gap: 8px; z-index: 10;
+    }
+    .preview-tool-btn, .preview .rotate {
+      height: 36px; padding: 0 12px 0 10px;
       border-radius: 18px; background: rgba(0, 0, 0, .55); color: #fff;
       display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500;
       backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 10;
+      border: none; cursor: pointer;
     }
-    .preview .rotate .icon { font-size: 20px; }
+    .preview-tool-btn .icon, .preview .rotate .icon { font-size: 20px; }
 
     .section { margin-top: 20px; }
     .section-title {
@@ -510,9 +514,14 @@
         <button class="close" id="change-video-btn" aria-label="Ganti video"><span class="icon">close</span></button>
         <button class="play" id="play-pause-btn" aria-label="Putar"><span class="icon fill" id="play-icon">play_arrow</span></button>
         <span class="overlay-chip time"><span id="current-timecode">0.0s</span> / <span id="total-timecode">0.0s</span></span>
-        <button class="rotate" id="rotate-video-btn" aria-label="Putar video">
-          <span class="icon">rotate_right</span><span id="rotate-btn-text">0°</span>
-        </button>
+        <div class="preview-tools">
+          <button class="preview-tool-btn" id="rotate-video-btn" aria-label="Putar video">
+            <span class="icon">rotate_right</span><span id="rotate-btn-text">0°</span>
+          </button>
+          <button class="preview-tool-btn" id="quick-crop-video-btn" aria-label="Edit &amp; Crop Video">
+            <span class="icon">crop</span><span id="label-quick-crop">Crop</span>
+          </button>
+        </div>
       </div>
 
       <!-- Aspect Ratio & Crop Control -->
@@ -553,6 +562,14 @@
               <span class="icon">check</span><span id="label-apply-custom-ratio">Terapkan</span>
             </button>
           </div>
+        </div>
+
+        <!-- Video Crop Action Button -->
+        <div class="video-crop-actions" style="margin-top: 10px;">
+          <button type="button" class="custom-action-btn" id="edit-video-btn">
+            <span class="icon">crop</span>
+            <span id="label-edit-video">Edit &amp; Crop Video (Zoom &amp; Posisi)</span>
+          </button>
         </div>
 
         <p class="seg-hint" id="ratio-hint"></p>
@@ -794,6 +811,58 @@
     </div>
   </section>
 
+  <!-- Video Editor Bottom Sheet -->
+  <div class="scrim" id="video-editor-scrim"></div>
+  <section class="sheet editor-sheet" id="video-editor-sheet" aria-hidden="true">
+    <div class="handle"></div>
+    <div class="sheet-head">
+      <div class="badge"><span class="icon">crop</span></div>
+      <div class="titles">
+        <h3 id="label-video-editor-title">Edit &amp; Crop Video</h3>
+        <p id="label-video-editor-hint">Geser canvas atau slider untuk mengatur framing klip video</p>
+      </div>
+      <button class="icon-btn" id="video-editor-close-btn" aria-label="Tutup"><span class="icon">close</span></button>
+    </div>
+
+    <!-- Interactive Video Canvas Container -->
+    <div class="editor-canvas-container" id="video-editor-canvas-container">
+      <canvas id="interactive-video-canvas" width="600" height="600"></canvas>
+    </div>
+
+    <!-- Framing Sliders -->
+    <div class="editor-controls">
+      <!-- Zoom -->
+      <div class="slider-row">
+        <label id="label-video-zoom">Zoom</label>
+        <input type="range" id="video-editor-zoom" min="1" max="3" step="0.05" value="1">
+        <output id="val-video-zoom">1.0x</output>
+      </div>
+      <!-- Pan X -->
+      <div class="slider-row">
+        <label id="label-video-panx">Geser X</label>
+        <input type="range" id="video-editor-panx" min="-100" max="100" step="1" value="0">
+        <output id="val-video-panx">0%</output>
+      </div>
+      <!-- Pan Y -->
+      <div class="slider-row">
+        <label id="label-video-pany">Geser Y</label>
+        <input type="range" id="video-editor-pany" min="-100" max="100" step="1" value="0">
+        <output id="val-video-pany">0%</output>
+      </div>
+    </div>
+
+    <div class="sheet-actions">
+      <div class="row2">
+        <button class="btn btn-tonal" id="video-editor-reset-btn">
+          <span class="icon">undo</span><span id="label-video-editor-reset">Reset</span>
+        </button>
+        <button class="btn btn-filled" id="video-editor-apply-btn">
+          <span class="icon">check</span><span id="label-video-editor-apply">Terapkan</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <!-- Fullscreen Cover Zoom Dialog -->
   <div class="zoom-dialog" id="zoom-dialog">
     <div class="zoom-box">
@@ -804,6 +873,6 @@
 
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.5"></script>
+  <script type="module" src="./app.js?v=4.6"></script>
 </body>
 </html>
