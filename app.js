@@ -1,10 +1,10 @@
 /**
- * app.js — v4.7 Controller
+ * app.js — v4.8 Controller
  * Mobile-first Android Material 3 interface
  * Multi-language (8 languages) & Resolution Config (720p/1080p) & Video Cropper & Privacy
  */
 
-import { translations, languageList } from './i18n.js?v=4.7';
+import { translations, languageList } from './i18n.js?v=4.8';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
@@ -12,7 +12,7 @@ import {
   trimVideoClip,
   computeOutputSize,
   drawRotated
-} from './motionEngine.js?v=4.7';
+} from './motionEngine.js?v=4.8';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -107,11 +107,14 @@ const currentResBadge = doc.getElementById('current-res-badge');
 const cardRes720 = doc.getElementById('card-res-720');
 const cardRes1080 = doc.getElementById('card-res-1080');
 const resHint = doc.getElementById('res-hint');
+// Hero Feature Cards
+const homeFeatures = doc.getElementById('home-features');
 const heroResFeature = doc.getElementById('hero-res-feature');
 const feat1 = doc.getElementById('feat-1');
+const privacyFeatureBtn = doc.getElementById('privacy-feature-btn');
+const guideFeatureBtn = doc.getElementById('guide-feature-btn');
 
 // Privacy Modal Elements
-const privacyFeatureBtn = doc.getElementById('privacy-feature-btn');
 const privacyScrim = doc.getElementById('privacy-scrim');
 const privacySheet = doc.getElementById('privacy-sheet');
 const privacyCloseBtn = doc.getElementById('privacy-close-btn');
@@ -544,7 +547,14 @@ function applyTranslations() {
   setTxt('label-res-720', 'res720');
   setTxt('label-res-1080', 'res1080');
   setTxt('label-privacy-title', 'privacyTitle');
+  setTxt('label-privacy-sub', 'privacySub');
   setTxt('label-privacy-desc', 'privacyDesc');
+  setTxt('label-p1-title', 'privacyP1Title');
+  setTxt('label-p1-desc', 'privacyP1Desc');
+  setTxt('label-p2-title', 'privacyP2Title');
+  setTxt('label-p2-desc', 'privacyP2Desc');
+  setTxt('label-p3-title', 'privacyP3Title');
+  setTxt('label-p3-desc', 'privacyP3Desc');
   setTxt('label-privacy-gotit', 'gotItBtn');
 
   updateModeUI();
@@ -619,6 +629,7 @@ function loadVideo(file) {
     } catch (_) {}
 
     dropzone?.classList.add('hidden');
+    homeFeatures?.classList.add('hidden');
     trimmerPanel?.classList.remove('hidden');
     actionBar?.classList.remove('hidden');
     closeSheet();
@@ -1338,21 +1349,38 @@ doc.querySelectorAll('input[name="targetResolution"]').forEach(radio => {
   });
 });
 
-heroResFeature?.addEventListener('click', () => {
+heroResFeature?.addEventListener('click', (e) => {
+  e.stopPropagation();
   currentResolution = currentResolution === 720 ? 1080 : 720;
   const r720 = doc.querySelector('input[name="targetResolution"][value="720"]');
   const r1080 = doc.querySelector('input[name="targetResolution"][value="1080"]');
   if (currentResolution === 720 && r720) r720.checked = true;
   if (currentResolution === 1080 && r1080) r1080.checked = true;
   updateResolutionUI();
-  showSnackbar(currentResolution === 1080 ? "Resolusi disetel ke 1080p FHD" : "Resolusi disetel ke 720p HD");
+  const msg = currentResolution === 1080 
+    ? (currentLang === 'id' ? "Resolusi disetel ke 1080p FHD" : "Resolution set to 1080p FHD")
+    : (currentLang === 'id' ? "Resolusi disetel ke 720p HD" : "Resolution set to 720p HD");
+  showSnackbar(msg);
 });
 
 // Privacy Modal Triggers
-privacyFeatureBtn?.addEventListener('click', openPrivacySheet);
+privacyFeatureBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openPrivacySheet();
+});
 privacyCloseBtn?.addEventListener('click', closePrivacySheet);
 privacyScrim?.addEventListener('click', closePrivacySheet);
 btnPrivacyGotit?.addEventListener('click', closePrivacySheet);
+
+// Guide Trigger (Feature Card #3)
+guideFeatureBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const guideDetails = doc.querySelector('details.guide');
+  if (guideDetails) {
+    guideDetails.open = true;
+    guideDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
 
 // File Chooser Triggers
 pickBtn?.addEventListener('click', () => videoFileInput?.click());
@@ -1381,6 +1409,7 @@ changeVideoBtn?.addEventListener('click', (e) => {
   videoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   tempVideoFraming = { zoom: 1.0, panX: 0, panY: 0 };
   dropzone?.classList.remove('hidden');
+  homeFeatures?.classList.remove('hidden');
   if (videoFileInput) videoFileInput.value = '';
 });
 
