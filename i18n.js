@@ -118,6 +118,9 @@ export const translations = {
     customCoverSuccess: "Foto sampul kustom berhasil dipilih!",
     errFormat: "Video tidak dapat diputar. Coba pilih file MP4 standar.",
     errProcess: "Gagal memproses video: ",
+    installBtnTitle: "Install Aplikasi",
+    installSuccess: "LiveBit berhasil di-install ke HP!",
+    installManualHint: "Tekan menu browser (⋮) lalu pilih 'Tambahkan ke Layar Utama' / 'Install Aplikasi'",
     rotateBtn: "Putar: "
   },
 
@@ -223,6 +226,9 @@ export const translations = {
     customCoverSuccess: "Custom cover photo applied successfully!",
     errFormat: "Video cannot be played. Please pick a standard MP4 video.",
     errProcess: "Failed to process video: ",
+    installBtnTitle: "Install App",
+    installSuccess: "LiveBit installed successfully!",
+    installManualHint: "Tap browser menu (⋮) and select 'Add to Home Screen' / 'Install App'",
     rotateBtn: "Rotate: "
   },
 
@@ -328,6 +334,9 @@ export const translations = {
     customCoverSuccess: "自定义封面设置成功！",
     errFormat: "无法播放该视频，请尝试标准 MP4 格式。",
     errProcess: "处理视频失败：",
+    installBtnTitle: "安装应用",
+    installSuccess: "LiveBit 已成功安装！",
+    installManualHint: "点击浏览器菜单 (⋮) 并选择“添加至主屏幕”或“安装应用”",
     rotateBtn: "旋转: "
   },
 
@@ -433,6 +442,9 @@ export const translations = {
     customCoverSuccess: "¡Foto de portada personalizada seleccionada!",
     errFormat: "No se puede reproducir el video. Prueba con un archivo MP4 estándar.",
     errProcess: "Error al procesar el video: ",
+    installBtnTitle: "Instalar aplicación",
+    installSuccess: "¡LiveBit instalado con éxito!",
+    installManualHint: "Toque el menú del navegador (⋮) y elija 'Añadir a la pantalla de inicio'",
     rotateBtn: "Rotar: "
   },
 
@@ -538,6 +550,9 @@ export const translations = {
     customCoverSuccess: "تم تطبيق صورة الغلاف المخصصة بنجاح!",
     errFormat: "تعذر تشغيل هذا الفيديو. يرجى تجربة ملف MP4 قياسي.",
     errProcess: "فشلت المعالجة: ",
+    installBtnTitle: "تثبيت التطبيق",
+    installSuccess: "تم تثبيت LiveBit بنجاح!",
+    installManualHint: "اضغط على قائمة المتصفح (⋮) واختر 'إضافة إلى الشاشة الرئيسية'",
     rotateBtn: "تدوير: "
   },
 
@@ -643,6 +658,9 @@ export const translations = {
     customCoverSuccess: "Image de couverture personnalisée appliquée !",
     errFormat: "Format vidéo non lisible. Essayez une vidéo MP4 classique.",
     errProcess: "Échec de traitement : ",
+    installBtnTitle: "Installer l'application",
+    installSuccess: "LiveBit installé avec succès !",
+    installManualHint: "Appuyez sur le menu (⋮) et choisissez 'Ajouter à l\'écran d\'accueil'",
     rotateBtn: "Pivoter : "
   },
 
@@ -748,6 +766,9 @@ export const translations = {
     customCoverSuccess: "カスタムカバー写真を設定しました！",
     errFormat: "動画を再生できません。標準的なMP4動画をお試しください。",
     errProcess: "処理に失敗しました: ",
+    installBtnTitle: "アプリをインストール",
+    installSuccess: "LiveBit が正常にインストールされました！",
+    installManualHint: "ブラウザのメニュー (⋮) から「ホーム画面に追加」を選択してください",
     rotateBtn: "回転: "
   },
 
@@ -853,6 +874,9 @@ export const translations = {
     customCoverSuccess: "Foto de capa personalizada aplicada com sucesso!",
     errFormat: "Não foi possível reproduzir este vídeo. Tente um MP4 padrão.",
     errProcess: "Falha ao processar o vídeo: ",
+    installBtnTitle: "Instalar aplicativo",
+    installSuccess: "LiveBit instalado com sucesso!",
+    installManualHint: "Toque no menu do navegador (⋮) e selecione 'Adicionar à tela de início'",
     rotateBtn: "Girar: "
   }
 };

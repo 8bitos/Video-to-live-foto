@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111418">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LiveBit">
+  <meta name="application-name" content="LiveBit">
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <title>LiveBit — Video ke Live Photo Android</title>
 
   <script>
@@ -511,6 +520,10 @@
 <body>
 
   <header class="appbar" id="appbar">
+    <a href="../../../index.html" class="icon-btn" title="Kembali ke 8BiTools Hub" style="text-decoration: none; width: auto; padding: 0 10px; border-radius: 19px; background: var(--surface-2); font-size: 12px; font-weight: 600; color: var(--on-surface); height: 38px; display: inline-flex; align-items: center; gap: 4px;">
+      <span class="icon" style="font-size: 18px;">arrow_back</span>
+      <span>8BiTools</span>
+    </a>
     <div class="logo"><span class="icon fill">motion_photos_on</span></div>
     <div class="titles">
       <h1 id="app-title">LiveBit</h1>
@@ -526,6 +539,11 @@
       </button>
       <div class="lang-menu hidden" id="lang-menu"></div>
     </div>
+
+    <!-- PWA Install Button -->
+    <button class="icon-btn hidden" id="install-pwa-btn" aria-label="Install Aplikasi" title="Install Aplikasi" style="color: var(--primary);">
+      <span class="icon">download_for_offline</span>
+    </button>
 
     <button class="icon-btn" id="theme-toggle" aria-label="Ganti tema">
       <span class="icon" id="theme-icon">dark_mode</span>
@@ -1040,6 +1058,6 @@
 
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.9"></script>
+  <script type="module" src="./app.js?v=5.0"></script>
 </body>
 </html>

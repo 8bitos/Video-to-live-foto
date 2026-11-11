@@ -1,10 +1,10 @@
 /**
- * app.js — v4.9 Controller
- * Mobile-first Android Material 3 interface
+ * app.js — v5.0 Controller
+ * Mobile-first Android Material 3 interface & PWA App
  * Multi-language (8 languages) & Resolution Config (720p/1080p) & Video Cropper & Privacy
  */
 
-import { translations, languageList } from './i18n.js?v=4.9';
+import { translations, languageList } from './i18n.js?v=5.0';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
@@ -12,7 +12,7 @@ import {
   trimVideoClip,
   computeOutputSize,
   drawRotated
-} from './motionEngine.js?v=4.9';
+} from './motionEngine.js?v=5.0';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -230,6 +230,7 @@ const currentLangCode = doc.getElementById('current-lang-code');
 // Theme Elements
 const themeToggle = doc.getElementById('theme-toggle');
 const themeIcon = doc.getElementById('theme-icon');
+const installPwaBtn = doc.getElementById('install-pwa-btn');
 
 // -------------------------------------------------------------
 // Helpers
@@ -587,6 +588,11 @@ function applyTranslations() {
   setHtml('label-guide-s3', 'guideStep3');
   setHtml('label-guide-s4', 'guideStep4');
   setTxt('label-guide-gotit', 'gotItBtn');
+
+  if (installPwaBtn) {
+    installPwaBtn.title = t('installBtnTitle');
+    installPwaBtn.setAttribute('aria-label', t('installBtnTitle'));
+  }
 
   updateModeUI();
   updateResolutionUI();
@@ -1732,3 +1738,42 @@ window.addEventListener('resize', () => {
 // Initialize i18n & Theme
 setLanguage(currentLang);
 updateThemeIcon();
+
+// -------------------------------------------------------------
+// PWA & Service Worker Registration
+// -------------------------------------------------------------
+let deferredInstallPrompt = null;
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => console.log('LiveBit PWA ready:', reg.scope))
+      .catch((err) => console.warn('PWA SW failed:', err));
+  });
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (installPwaBtn) installPwaBtn.classList.remove('hidden');
+});
+
+installPwaBtn?.addEventListener('click', async () => {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if (outcome === 'accepted') {
+      showSnackbar(t('installSuccess'));
+    }
+    deferredInstallPrompt = null;
+    installPwaBtn?.classList.add('hidden');
+  } else {
+    showSnackbar(t('installManualHint'));
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  installPwaBtn?.classList.add('hidden');
+  showSnackbar(t('installSuccess'));
+});
