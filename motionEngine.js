@@ -9,7 +9,7 @@
  * 4. Exact Android Motion Photo specification (MP4 at physical EOF).
  */
 
-import Mp4MuxerModule from './lib/mp4-muxer.js';
+import Mp4MuxerModule from './lib/mp4-muxer.js?v=3.0';
 const Mp4Muxer = Mp4MuxerModule.default || Mp4MuxerModule;
 
 /**

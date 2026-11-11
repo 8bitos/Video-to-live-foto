@@ -3,13 +3,13 @@
  * 100% Client-Side Universal Converter
  */
 
-import { translations } from './i18n.js';
+import { translations } from './i18n.js?v=3.0';
 import { 
   createGoogleMotionPhoto, 
   createAppleLivePhoto, 
   extractCoverFrame, 
   trimVideoClip 
-} from './motionEngine.js';
+} from './motionEngine.js?v=3.0';
 
 // Global State
 let currentLang = 'id';
@@ -360,13 +360,13 @@ resetToolBtn.addEventListener('click', () => {
 // -------------------------------------------------------------
 // Conversion Execution
 // -------------------------------------------------------------
-convertBtn.addEventListener('click', async () => {
+convertBtn?.addEventListener('click', async () => {
   if (isConverting || !currentVideoFile) return;
 
-  const startTime = parseFloat(sliderStart.value);
-  const endTime = parseFloat(sliderEnd.value);
-  const keyframeTime = parseFloat(sliderKeyframe.value);
-  const duration = endTime - startTime;
+  const startTime = sliderStart ? parseFloat(sliderStart.value || '0') : 0;
+  const endTime = sliderEnd ? parseFloat(sliderEnd.value || '2.5') : 2.5;
+  const keyframeTime = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
+  const duration = Math.max(0.6, endTime - startTime);
 
   if (duration < 0.6) {
     alert("Durasi klip minimal 0.8 detik.");
