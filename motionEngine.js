@@ -1,21 +1,30 @@
 /**
- * motionEngine.js - Ultra-Smooth Mobile Engine
- * 100% Client-Side Engine for Android Motion Photo & Apple Live Photo
- * 
- * Major Fixes:
- * 1. FIX STUCK AT 85%: Always calls encoder.close() in a finally block to release Android MediaCodec lock.
- * 2. FIX LAG & CHOPPINESS: Uses native sequential hardware playback + requestVideoFrameCallback instead of 90 slow seek commands.
- * 3. FIX DURATION: Explicit frame timestamps and durations guaranteed full 1.5s - 3.5s motion.
- * 4. MOBILE RAM OPTIMIZATION: Reuses a single canvas and releases old VideoFrame objects immediately.
+ * motionEngine.js — v4.0
+ * 100% client-side engine for Android Motion Photo (Google Camera spec).
+ *
+ * Key points:
+ * - Output MP4 is always a real FastStart H.264 MP4 (never WebM). If it can't be made, we throw
+ *   instead of silently producing a file that won't be recognised as a Live Photo.
+ * - Frames are captured with sequential playback (requestVideoFrameCallback) and timestamped
+ *   with the real media time, so duration and speed always match the selected range.
+ * - The hardware encoder is always closed in `finally`, so generating repeatedly never hangs.
  */
 
-import Mp4MuxerModule from './lib/mp4-muxer.js?v=3.1';
+import Mp4MuxerModule from './lib/mp4-muxer.js?v=4.0';
 const Mp4Muxer = Mp4MuxerModule.default || Mp4MuxerModule;
+
+const FPS = 30;
+const FRAME_US = Math.round(1_000_000 / FPS);
+const MAX_DIM = 1280; // 720p class — smooth on every Android device
+
+/* ------------------------------------------------------------------ */
+/* Metadata                                                            */
+/* ------------------------------------------------------------------ */
 
 /**
  * Builds standard Google Camera / Android Motion Photo XMP metadata.
- * @param {number} presentationTimestampUs
- * @param {number} videoByteLength
+ * @param {number} presentationTimestampUs Timestamp of the still photo inside the video (µs)
+ * @param {number} videoByteLength Exact byte size of the appended MP4
  * @returns {string}
  */
 export function buildGoogleMotionPhotoXMP(presentationTimestampUs, videoByteLength) {
@@ -39,18 +48,10 @@ export function buildGoogleMotionPhotoXMP(presentationTimestampUs, videoByteLeng
         `<Container:Directory>` +
           `<rdf:Seq>` +
             `<rdf:li rdf:parseType="Resource">` +
-              `<Container:Item ` +
-                `Item:Mime="image/jpeg" ` +
-                `Item:Semantic="Primary" ` +
-                `Item:Length="0" ` +
-                `Item:Padding="0"/>` +
+              `<Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/>` +
             `</rdf:li>` +
             `<rdf:li rdf:parseType="Resource">` +
-              `<Container:Item ` +
-                `Item:Mime="video/mp4" ` +
-                `Item:Semantic="MotionPhoto" ` +
-                `Item:Length="${vLen}" ` +
-                `Item:Padding="0"/>` +
+              `<Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="${vLen}" Item:Padding="0"/>` +
             `</rdf:li>` +
           `</rdf:Seq>` +
         `</Container:Directory>` +
@@ -61,24 +62,23 @@ export function buildGoogleMotionPhotoXMP(presentationTimestampUs, videoByteLeng
 }
 
 /**
- * Injects Adobe XMP APP1 segment into a JPEG byte array.
- * @param {Uint8Array} jpegBytes 
- * @param {string} xmpString 
+ * Injects an Adobe XMP APP1 segment into a JPEG byte array.
+ * @param {Uint8Array} jpegBytes
+ * @param {string} xmpString
  * @returns {Uint8Array}
  */
 export function injectXMPIntoJPEG(jpegBytes, xmpString) {
   if (jpegBytes[0] !== 0xFF || jpegBytes[1] !== 0xD8) {
-    throw new Error("Invalid JPEG file: missing SOI marker (0xFFD8).");
+    throw new Error("File JPEG tidak valid (SOI marker hilang).");
   }
 
-  const xmpHeader = "http://ns.adobe.com/xap/1.0/\0";
   const encoder = new TextEncoder();
-  const xmpHeaderBytes = encoder.encode(xmpHeader);
+  const xmpHeaderBytes = encoder.encode("http://ns.adobe.com/xap/1.0/\0");
   const xmpXmlBytes = encoder.encode(xmpString);
 
   const app1PayloadLength = 2 + xmpHeaderBytes.length + xmpXmlBytes.length;
   if (app1PayloadLength > 0xFFFF) {
-    throw new Error("XMP payload too large for a single JPEG APP1 segment.");
+    throw new Error("XMP terlalu besar untuk satu segmen APP1.");
   }
 
   const app1Segment = new Uint8Array(2 + app1PayloadLength);
@@ -89,43 +89,40 @@ export function injectXMPIntoJPEG(jpegBytes, xmpString) {
   app1Segment.set(xmpHeaderBytes, 4);
   app1Segment.set(xmpXmlBytes, 4 + xmpHeaderBytes.length);
 
+  // Insert after SOI, or after APP0 (JFIF) if present
   let insertPos = 2;
   if (jpegBytes.length > 4 && jpegBytes[2] === 0xFF && jpegBytes[3] === 0xE0) {
     const app0Len = (jpegBytes[4] << 8) | jpegBytes[5];
-    insertPos = 2 + 2 + app0Len;
+    insertPos = 4 + app0Len;
   }
 
   const result = new Uint8Array(jpegBytes.length + app1Segment.length);
   result.set(jpegBytes.subarray(0, insertPos), 0);
   result.set(app1Segment, insertPos);
   result.set(jpegBytes.subarray(insertPos), insertPos + app1Segment.length);
-
   return result;
 }
 
 /**
- * Combines JPEG and MP4 with the MP4 strictly at EOF.
- * @param {Uint8Array} jpegBytes 
- * @param {Uint8Array} mp4Bytes 
- * @param {number} presentationTimestampUs 
+ * Android Motion Photo: [JPEG + XMP] followed by the MP4, which must sit exactly at EOF.
+ * @param {Uint8Array} jpegBytes
+ * @param {Uint8Array} mp4Bytes
+ * @param {number} presentationTimestampUs
  * @returns {Uint8Array}
  */
 export function createGoogleMotionPhoto(jpegBytes, mp4Bytes, presentationTimestampUs) {
   const xmpString = buildGoogleMotionPhotoXMP(presentationTimestampUs, mp4Bytes.byteLength);
   const modifiedJpeg = injectXMPIntoJPEG(jpegBytes, xmpString);
 
-  const totalLength = modifiedJpeg.byteLength + mp4Bytes.byteLength;
-  const combined = new Uint8Array(totalLength);
-
+  const combined = new Uint8Array(modifiedJpeg.byteLength + mp4Bytes.byteLength);
   combined.set(modifiedJpeg, 0);
   combined.set(mp4Bytes, modifiedJpeg.byteLength);
-
   return combined;
 }
 
 /**
  * Builds Apple Live Photo metadata XMP for JPEG.
- * @param {string} assetUUID 
+ * @param {string} assetUUID
  * @returns {string}
  */
 export function buildAppleLivePhotoXMP(assetUUID) {
@@ -143,386 +140,362 @@ export function buildAppleLivePhotoXMP(assetUUID) {
 
 /**
  * Creates Apple Live Photo paired assets (.jpg + .mov).
- * @param {Uint8Array} jpegBytes 
- * @param {Uint8Array} videoBytes 
- * @param {string} assetUUID 
+ * @param {Uint8Array} jpegBytes
+ * @param {Uint8Array} videoBytes
+ * @param {string} assetUUID
  * @returns {{ photoBytes: Uint8Array, videoBytes: Uint8Array, uuid: string }}
  */
 export function createAppleLivePhoto(jpegBytes, videoBytes, assetUUID = null) {
   const uuid = assetUUID || (crypto.randomUUID ? crypto.randomUUID().toUpperCase() : 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890');
-  const xmpString = buildAppleLivePhotoXMP(uuid);
-  const modifiedJpeg = injectXMPIntoJPEG(jpegBytes, xmpString);
-
   return {
-    photoBytes: modifiedJpeg,
-    videoBytes: videoBytes,
-    uuid: uuid
+    photoBytes: injectXMPIntoJPEG(jpegBytes, buildAppleLivePhotoXMP(uuid)),
+    videoBytes,
+    uuid
   };
 }
 
+/** True when the bytes start like an ISO-BMFF / MP4 file ("....ftyp"). */
+export function isValidMp4(bytes) {
+  return !!bytes && bytes.length > 12 &&
+    String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]) === 'ftyp';
+}
+
+/* ------------------------------------------------------------------ */
+/* Frame helpers                                                       */
+/* ------------------------------------------------------------------ */
+
 /**
- * Extracts a still frame from video with rotation and mobile scaling.
- * @param {HTMLVideoElement} videoElement 
- * @param {number} timestamp 
- * @param {number} quality 
- * @param {number} maxDimension 
- * @param {number} rotation 
- * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string }>}
+ * Seeks a video and resolves when the frame is ready (with a timeout safety net).
+ * @param {HTMLVideoElement} video
+ * @param {number} time
+ * @param {number} timeoutMs
  */
-export function extractCoverFrame(videoElement, timestamp, quality = 0.88, maxDimension = 1280, rotation = 0) {
-  return new Promise((resolve, reject) => {
-    const video = videoElement;
-
-    const onSeeked = () => {
-      video.removeEventListener('seeked', onSeeked);
-      try {
-        let origW = video.videoWidth || 1280;
-        let origH = video.videoHeight || 720;
-
-        if (maxDimension && (origW > maxDimension || origH > maxDimension)) {
-          if (origW > origH) {
-            origH = Math.round((origH * maxDimension) / origW);
-            origW = maxDimension;
-          } else {
-            origW = Math.round((origW * maxDimension) / origH);
-            origH = maxDimension;
-          }
-        }
-
-        const isRotated90 = (rotation === 90 || rotation === 270);
-        const canvasW = isRotated90 ? origH : origW;
-        const canvasH = isRotated90 ? origW : origH;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = canvasW;
-        canvas.height = canvasH;
-        const ctx = canvas.getContext('2d', { alpha: false });
-        ctx.imageSmoothingEnabled = true;
-
-        if (rotation === 90) {
-          ctx.translate(canvasW, 0);
-          ctx.rotate(Math.PI / 2);
-        } else if (rotation === 180) {
-          ctx.translate(canvasW, canvasH);
-          ctx.rotate(Math.PI);
-        } else if (rotation === 270) {
-          ctx.translate(0, canvasH);
-          ctx.rotate((3 * Math.PI) / 2);
-        }
-
-        ctx.drawImage(video, 0, 0, origW, origH);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error("Gagal membuat foto sampul."));
-            return;
-          }
-          const reader = new FileReader();
-          reader.onload = () => {
-            resolve({
-              blob,
-              uint8Array: new Uint8Array(reader.result),
-              width: canvasW,
-              height: canvasH,
-              dataUrl
-            });
-          };
-          reader.onerror = reject;
-          reader.readAsArrayBuffer(blob);
-        }, 'image/jpeg', quality);
-      } catch (err) {
-        reject(err);
-      }
+export function waitSeek(video, time, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeEventListener('seeked', finish);
+      resolve();
     };
+    timer = setTimeout(finish, timeoutMs);
+    video.addEventListener('seeked', finish);
 
-    video.addEventListener('seeked', onSeeked, { once: true });
-    video.currentTime = Math.max(0, Math.min(timestamp, video.duration || timestamp));
+    const maxT = Number.isFinite(video.duration) ? Math.max(0, video.duration - 0.01) : time;
+    const target = Math.max(0, Math.min(time, maxT));
+    if (Math.abs(video.currentTime - target) < 0.005 && video.readyState >= 2) {
+      finish();
+      return;
+    }
+    video.currentTime = target;
   });
 }
 
 /**
- * Trims and encodes video using smooth sequential playback and WebCodecs.
- * Eliminates 90 slow seek commands and frees the Android MediaCodec instance on completion.
- * @param {HTMLVideoElement} videoElement
- * @param {number} startTime Start time in seconds
- * @param {number} endTime End time in seconds
- * @param {File|Blob} originalFile Original video file
- * @param {number} rotation Degrees (0, 90, 180, 270)
- * @param {Function} onProgress Progress callback (0 to 100)
+ * Output size after rotation, capped to `maxDim` and rounded to even numbers (H.264).
+ * @param {HTMLVideoElement} video
+ * @param {number} rotation
+ * @param {number} maxDim
+ */
+export function computeOutputSize(video, rotation, maxDim = MAX_DIM) {
+  const srcW = video.videoWidth || 1280;
+  const srcH = video.videoHeight || 720;
+  const rot90 = rotation === 90 || rotation === 270;
+  let w = rot90 ? srcH : srcW;
+  let h = rot90 ? srcW : srcH;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  w = Math.max(2, Math.round((w * scale) / 2) * 2);
+  h = Math.max(2, Math.round((h * scale) / 2) * 2);
+  return { w, h };
+}
+
+/**
+ * Draws the current video frame into a w×h canvas context, rotated upright.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {HTMLVideoElement} video
+ * @param {number} rotation
+ * @param {number} w
+ * @param {number} h
+ */
+export function drawRotated(ctx, video, rotation, w, h) {
+  const rot90 = rotation === 90 || rotation === 270;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (rotation === 90) {
+    ctx.translate(w, 0);
+    ctx.rotate(Math.PI / 2);
+  } else if (rotation === 180) {
+    ctx.translate(w, h);
+    ctx.rotate(Math.PI);
+  } else if (rotation === 270) {
+    ctx.translate(0, h);
+    ctx.rotate(-Math.PI / 2);
+  }
+  ctx.drawImage(video, 0, 0, rot90 ? h : w, rot90 ? w : h);
+  ctx.restore();
+}
+
+/**
+ * Extracts an upright still JPEG from the video at `timestamp`.
+ * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number }>}
+ */
+export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDimension = MAX_DIM, rotation = 0) {
+  video.pause();
+  await waitSeek(video, timestamp);
+
+  const { w, h } = computeOutputSize(video, rotation, maxDimension);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  drawRotated(ctx, video, rotation, w, h);
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Gagal membuat foto sampul."))), 'image/jpeg', quality);
+  });
+  const uint8Array = new Uint8Array(await blob.arrayBuffer());
+  canvas.width = canvas.height = 0; // release GPU memory
+  return { blob, uint8Array, width: w, height: h };
+}
+
+/* ------------------------------------------------------------------ */
+/* Video encoding                                                      */
+/* ------------------------------------------------------------------ */
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })
+  ]);
+}
+
+async function pickEncoderConfig(w, h) {
+  // Baseline / Main / High at levels that comfortably fit 720p–1080p
+  const codecs = ['avc1.42002a', 'avc1.420028', 'avc1.4d0028', 'avc1.640028', 'avc1.42001f'];
+  for (const codec of codecs) {
+    const config = { codec, width: w, height: h, bitrate: 5_000_000, framerate: FPS, avc: { format: 'avc' } };
+    try {
+      const support = await VideoEncoder.isConfigSupported(config);
+      if (support && support.supported) return config;
+    } catch (_) { /* try next */ }
+  }
+  return null;
+}
+
+async function encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress) {
+  const duration = endTime - startTime;
+  let finalized = false;
+  let encoderError = null;
+  let stopped = false;
+  let frames = 0;
+  let lastTs = -Infinity;
+
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: 'avc', width: w, height: h },
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset'
+  });
+
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => { if (!finalized) muxer.addVideoChunk(chunk, meta); },
+    error: (e) => { encoderError = e; }
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  const encodeAt = (tUs) => {
+    drawRotated(ctx, video, rotation, w, h);
+    const frame = new VideoFrame(canvas, { timestamp: tUs, duration: FRAME_US });
+    try {
+      encoder.encode(frame, { keyFrame: frames % 15 === 0 });
+    } finally {
+      frame.close();
+    }
+    lastTs = tUs;
+    frames++;
+  };
+
+  try {
+    encoder.configure(config);
+
+    await waitSeek(video, startTime);
+    encodeAt(0); // guarantee the first frame
+    video.playbackRate = 1;
+
+    const hasRVFC = typeof video.requestVideoFrameCallback === 'function';
+    const minGap = FRAME_US * 0.8;
+
+    await new Promise((resolve) => {
+      let useRaf = !hasRVFC;
+      let lastCb = performance.now();
+      let safety = null;
+      let watchdog = null;
+
+      const finish = () => {
+        if (stopped) return;
+        stopped = true;
+        clearTimeout(safety);
+        clearInterval(watchdog);
+        video.removeEventListener('ended', finish);
+        video.pause();
+        resolve();
+      };
+
+      const schedule = () => {
+        if (stopped) return;
+        if (useRaf) requestAnimationFrame(() => onFrame(0, null, true));
+        else video.requestVideoFrameCallback(onFrame);
+      };
+
+      function onFrame(_now, meta, fromRaf) {
+        if (stopped) return;
+        if (!fromRaf && useRaf) return; // stale rVFC chain after switching to rAF
+        lastCb = performance.now();
+        if (encoderError) { finish(); return; }
+
+        const mediaTime = meta && typeof meta.mediaTime === 'number' ? meta.mediaTime : video.currentTime;
+        if (mediaTime >= endTime - 0.001) { finish(); return; }
+
+        const tUs = Math.round((mediaTime - startTime) * 1_000_000);
+        if (tUs > 0 && tUs - lastTs >= minGap) {
+          encodeAt(tUs);
+          // Slow playback down if the hardware encoder falls behind — keeps every frame
+          if (encoder.encodeQueueSize > 6 && video.playbackRate > 0.5) video.playbackRate = 0.5;
+          else if (encoder.encodeQueueSize < 2 && video.playbackRate < 1) video.playbackRate = 1;
+        }
+
+        onProgress(Math.min(99, Math.max(0, Math.round(((mediaTime - startTime) / duration) * 100))));
+        schedule();
+      }
+
+      // If rVFC stops firing (e.g. video scrolled off-screen), fall back to rAF polling
+      watchdog = setInterval(() => {
+        if (!stopped && !useRaf && performance.now() - lastCb > 500) {
+          useRaf = true;
+          schedule();
+        }
+      }, 250);
+
+      safety = setTimeout(finish, (duration / 0.5) * 1000 + 6000);
+      video.addEventListener('ended', finish);
+      schedule();
+      video.play().catch(() => finish());
+    });
+
+    if (encoderError) throw encoderError;
+    if (frames < 5) throw new Error("Gagal menangkap frame video. Coba lagi.");
+
+    await withTimeout(encoder.flush(), 20000, "Encoder terlalu lama merespons.");
+    if (encoderError) throw encoderError;
+
+    muxer.finalize();
+    finalized = true;
+    onProgress(100);
+    return new Uint8Array(muxer.target.buffer);
+  } finally {
+    stopped = true;
+    finalized = true;
+    video.pause();
+    video.playbackRate = 1;
+    if (encoder.state !== 'closed') {
+      try { encoder.close(); } catch (_) { /* ignore */ }
+    }
+    canvas.width = canvas.height = 0;
+  }
+}
+
+async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress) {
+  const types = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
+  const mimeType = typeof MediaRecorder !== 'undefined'
+    ? types.find((t) => MediaRecorder.isTypeSupported(t))
+    : null;
+  if (!mimeType) {
+    throw new Error("Browser ini belum mendukung pembuatan MP4. Gunakan Google Chrome versi terbaru.");
+  }
+
+  const duration = endTime - startTime;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  await waitSeek(video, startTime);
+  drawRotated(ctx, video, rotation, w, h);
+
+  const stream = canvas.captureStream(FPS);
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
+  const chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stoppedPromise = new Promise((resolve) => { recorder.onstop = resolve; });
+  recorder.start();
+
+  await new Promise((resolve) => {
+    let done = false;
+    let safety = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safety);
+      video.pause();
+      resolve();
+    };
+    const tick = () => {
+      if (done) return;
+      drawRotated(ctx, video, rotation, w, h);
+      const t = video.currentTime;
+      onProgress(Math.min(99, Math.max(0, Math.round(((t - startTime) / duration) * 100))));
+      if (t >= endTime || video.ended) { finish(); return; }
+      requestAnimationFrame(tick);
+    };
+    safety = setTimeout(finish, duration * 1000 + 5000);
+    video.play().then(() => requestAnimationFrame(tick)).catch(finish);
+  });
+
+  recorder.stop();
+  await stoppedPromise;
+  stream.getTracks().forEach((t) => t.stop());
+  canvas.width = canvas.height = 0;
+
+  const blob = new Blob(chunks, { type: 'video/mp4' });
+  onProgress(100);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * Cuts [startTime, endTime] from the video into an upright, 30fps, ≤720p H.264 MP4.
+ * @param {HTMLVideoElement} video
+ * @param {number} startTime
+ * @param {number} endTime
+ * @param {File|Blob} _originalFile (unused, kept for API compatibility)
+ * @param {number} rotation
+ * @param {(p:number)=>void} onProgress
  * @returns {Promise<Uint8Array>}
  */
-export async function trimVideoClip(videoElement, startTime, endTime, originalFile, rotation = 0, onProgress = () => {}) {
-  const duration = Math.max(0.8, endTime - startTime);
-  const isOriginalMP4 = originalFile && (originalFile.type.includes('mp4') || originalFile.name.toLowerCase().endsWith('.mp4'));
-  const isFullDuration = Math.abs(duration - videoElement.duration) < 0.15 && startTime < 0.1;
+export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}) {
+  video.pause();
+  video.muted = true;
+  video.playsInline = true;
 
-  if (rotation === 0 && isOriginalMP4 && isFullDuration) {
-    onProgress(100);
-    const buffer = await originalFile.arrayBuffer();
-    return new Uint8Array(buffer);
-  }
+  const { w, h } = computeOutputSize(video, rotation);
 
-  videoElement.muted = true;
-  videoElement.playsInline = true;
-
-  // 1. Primary Engine: Ultra-Fast WebCodecs + Mp4Muxer
-  if (typeof VideoEncoder !== 'undefined' && Mp4Muxer) {
-    let encoder = null;
-    let animFrameHandle = null;
-
-    try {
-      const origW = videoElement.videoWidth || 1280;
-      const origH = videoElement.videoHeight || 720;
-      const isRotated90 = (rotation === 90 || rotation === 270);
-      
-      let targetW = isRotated90 ? origH : origW;
-      let targetH = isRotated90 ? origW : origH;
-
-      // 720p cap ensures smooth 30fps on all Android chips with zero thermal throttling
-      const MAX_MOBILE_DIM = 1280;
-      if (targetW > MAX_MOBILE_DIM || targetH > MAX_MOBILE_DIM) {
-        if (targetW > targetH) {
-          targetH = Math.round((targetH * MAX_MOBILE_DIM) / targetW);
-          targetW = MAX_MOBILE_DIM;
-        } else {
-          targetW = Math.round((targetW * MAX_MOBILE_DIM) / targetH);
-          targetH = MAX_MOBILE_DIM;
-        }
-      }
-
-      targetW = targetW % 2 === 0 ? targetW : targetW - 1;
-      targetH = targetH % 2 === 0 ? targetH : targetH - 1;
-
-      const muxer = new Mp4Muxer.Muxer({
-        target: new Mp4Muxer.ArrayBufferTarget(),
-        video: {
-          codec: 'avc',
-          width: targetW,
-          height: targetH
-        },
-        fastStart: 'in-memory',
-        firstTimestampBehavior: 'offset'
-      });
-
-      const fps = 30;
-      const frameDurationUs = Math.round(1_000_000 / fps); // 33,333 μs
-      let encoderError = null;
-
-      encoder = new VideoEncoder({
-        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: (e) => {
-          encoderError = e;
-          console.error("VideoEncoder runtime error:", e);
-        }
-      });
-
-      encoder.configure({
-        codec: 'avc1.42001f', // H.264 Baseline Profile level 3.1
-        width: targetW,
-        height: targetH,
-        bitrate: 3_000_000,
-        framerate: fps
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext('2d', { alpha: false });
-      ctx.imageSmoothingEnabled = true;
-
-      // Fast seek to start time once
-      videoElement.currentTime = startTime;
-      await new Promise((r) => {
-        const h = () => { videoElement.removeEventListener('seeked', h); r(); };
-        videoElement.addEventListener('seeked', h, { once: true });
-        setTimeout(h, 200);
-      });
-
-      // Sequential playback recording: silky smooth without 90 slow seek commands
-      let frameCount = 0;
-      const minFrames = Math.max(15, Math.round(duration * fps));
-
-      await videoElement.play().catch(() => {});
-
-      const capturePromise = new Promise((resolveCapture) => {
-        const renderFrame = () => {
-          if (encoderError) {
-            resolveCapture();
-            return;
-          }
-
-          const curTime = videoElement.currentTime;
-          
-          ctx.save();
-          if (rotation === 90) {
-            ctx.translate(targetW, 0);
-            ctx.rotate(Math.PI / 2);
-          } else if (rotation === 180) {
-            ctx.translate(targetW, targetH);
-            ctx.rotate(Math.PI);
-          } else if (rotation === 270) {
-            ctx.translate(0, targetH);
-            ctx.rotate((3 * Math.PI) / 2);
-          }
-          ctx.drawImage(videoElement, 0, 0, origW, origH);
-          ctx.restore();
-
-          const timestampUs = Math.round(frameCount * frameDurationUs);
-          const videoFrame = new VideoFrame(canvas, {
-            timestamp: timestampUs,
-            duration: frameDurationUs
-          });
-
-          encoder.encode(videoFrame, { keyFrame: frameCount % 10 === 0 });
-          videoFrame.close();
-          frameCount++;
-
-          const progress = Math.min(99, Math.round(((curTime - startTime) / duration) * 100));
-          onProgress(progress);
-
-          // Stop when endTime reached or video ended or enough frames captured
-          if (curTime >= endTime || videoElement.ended || frameCount >= minFrames + 10) {
-            videoElement.pause();
-            resolveCapture();
-            return;
-          }
-
-          if (typeof videoElement.requestVideoFrameCallback === 'function') {
-            animFrameHandle = videoElement.requestVideoFrameCallback(renderFrame);
-          } else {
-            animFrameHandle = requestAnimationFrame(renderFrame);
-          }
-        };
-
-        if (typeof videoElement.requestVideoFrameCallback === 'function') {
-          animFrameHandle = videoElement.requestVideoFrameCallback(renderFrame);
-        } else {
-          animFrameHandle = requestAnimationFrame(renderFrame);
-        }
-
-        // Hard safety timeout in case playback stalls
-        setTimeout(() => {
-          videoElement.pause();
-          resolveCapture();
-        }, Math.max(3000, duration * 2000));
-      });
-
-      await capturePromise;
-
-      // Flush with a 3-second safeguard
-      await Promise.race([
-        encoder.flush(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Encoder flush timeout")), 3000))
-      ]);
-
-      muxer.finalize();
-      onProgress(100);
-
-      return new Uint8Array(muxer.target.buffer);
-
-    } catch (err) {
-      console.warn("WebCodecs fallback to stream capture:", err);
-    } finally {
-      // CRITICAL FIX FOR 85% STUCK BUG: Always close encoder to release Android MediaCodec hardware lock!
-      if (encoder && encoder.state !== 'closed') {
-        try {
-          encoder.close();
-        } catch (_) {}
+  if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && Mp4Muxer) {
+    const config = await pickEncoderConfig(w, h);
+    if (config) {
+      try {
+        return await encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress);
+      } catch (err) {
+        console.warn("WebCodecs gagal, mencoba MediaRecorder:", err);
       }
     }
   }
 
-  // 2. High-Performance Stream Fallback
-  return new Promise((resolve, reject) => {
-    try {
-      const origW = videoElement.videoWidth || 1280;
-      const origH = videoElement.videoHeight || 720;
-      const isRotated90 = (rotation === 90 || rotation === 270);
-      
-      let targetW = isRotated90 ? origH : origW;
-      let targetH = isRotated90 ? origW : origH;
-      if (targetW > 1280 || targetH > 1280) {
-        if (targetW > targetH) {
-          targetH = Math.round((targetH * 1280) / targetW);
-          targetW = 1280;
-        } else {
-          targetW = Math.round((targetW * 1280) / targetH);
-          targetH = 1280;
-        }
-      }
-      targetW = targetW % 2 === 0 ? targetW : targetW - 1;
-      targetH = targetH % 2 === 0 ? targetH : targetH - 1;
-
-      const offscreenCanvas = document.createElement('canvas');
-      offscreenCanvas.width = targetW;
-      offscreenCanvas.height = targetH;
-      const ctx = offscreenCanvas.getContext('2d', { alpha: false });
-
-      const drawFrame = () => {
-        ctx.save();
-        if (rotation === 90) {
-          ctx.translate(targetW, 0);
-          ctx.rotate(Math.PI / 2);
-        } else if (rotation === 180) {
-          ctx.translate(targetW, targetH);
-          ctx.rotate(Math.PI);
-        } else if (rotation === 270) {
-          ctx.translate(0, targetH);
-          ctx.rotate((3 * Math.PI) / 2);
-        }
-        ctx.drawImage(videoElement, 0, 0, origW, origH);
-        ctx.restore();
-      };
-
-      drawFrame();
-      const stream = offscreenCanvas.captureStream(30);
-
-      let mimeType = 'video/mp4';
-      if (!MediaRecorder.isTypeSupported('video/mp4')) {
-        mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp8') ? 'video/webm; codecs=vp8' : 'video/webm';
-      }
-
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 3000000 });
-      const chunks = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const fullBlob = new Blob(chunks, { type: mimeType });
-        const arrayBuf = await fullBlob.arrayBuffer();
-        onProgress(100);
-        resolve(new Uint8Array(arrayBuf));
-      };
-
-      videoElement.currentTime = startTime;
-      videoElement.addEventListener('seeked', () => {
-        videoElement.play().catch(() => {});
-        recorder.start(100);
-
-        const checkInterval = setInterval(() => {
-          drawFrame();
-          const current = videoElement.currentTime;
-          const prog = Math.min(99, Math.round(((current - startTime) / duration) * 100));
-          onProgress(prog);
-
-          if (current >= endTime || videoElement.ended || current - startTime >= duration + 0.2) {
-            clearInterval(checkInterval);
-            videoElement.pause();
-            if (recorder.state === 'recording') recorder.stop();
-          }
-        }, 33);
-      }, { once: true });
-
-    } catch (err) {
-      if (originalFile) {
-        originalFile.arrayBuffer().then(buf => resolve(new Uint8Array(buf))).catch(reject);
-      } else {
-        reject(err);
-      }
-    }
-  });
+  return recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress);
 }
