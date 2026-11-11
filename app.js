@@ -1,16 +1,16 @@
 /**
- * app.js — v4.3 Controller
+ * app.js — v4.5 Controller
  * Mobile-first Android Material 3 interface
- * Multi-language (8 languages) & Cover Studio & Aspect Ratio / Cropping
+ * Multi-language (8 languages) & Cover Studio & Custom Ratio & Cover Editor / Cropper
  */
 
-import { translations, languageList } from './i18n.js?v=4.3';
+import { translations, languageList } from './i18n.js?v=4.5';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
   processCustomCoverImage,
   trimVideoClip 
-} from './motionEngine.js?v=4.3';
+} from './motionEngine.js?v=4.5';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -22,13 +22,24 @@ if (!translations[currentLang]) currentLang = 'en';
 let currentVideoFile = null;
 let currentVideoUrl = null;
 let currentRotation = 0; // 0, 90, 180, 270
-let currentAspectRatio = 'original'; // 'original' | '9:16' | '1:1' | '4:5' | '16:9'
+let currentAspectRatio = 'original'; // 'original' | '9:16' | '1:1' | '4:5' | '16:9' | 'W:H'
 let isConverting = false;
 let snackbarTimeout = null;
 
 // Custom Cover State
 let customCoverState = null; // { blob, uint8Array, width, height, dataUrl, rawFile, active: true }
 let currentCoverDataUrl = '';
+
+// Cover Photo Editor Internal State
+let editorSourceImage = null; // Image element loaded for editor
+let editorState = {
+  zoom: 1.0,
+  panX: 0,
+  panY: 0,
+  brightness: 100,
+  contrast: 100,
+  saturation: 100
+};
 
 // Converted Result State
 let generatedResult = {
@@ -65,6 +76,10 @@ const changeVideoBtn = doc.getElementById('change-video-btn');
 // Aspect Ratio Elements
 const currentRatioBadge = doc.getElementById('current-ratio-badge');
 const ratioHint = doc.getElementById('ratio-hint');
+const customRatioBox = doc.getElementById('custom-ratio-box');
+const customRatioW = doc.getElementById('custom-ratio-w');
+const customRatioH = doc.getElementById('custom-ratio-h');
+const btnApplyCustomRatio = doc.getElementById('btn-apply-custom-ratio');
 
 // Mode Selection
 const cardModeAndroid = doc.getElementById('card-mode-android');
@@ -93,9 +108,31 @@ const btnKfStart = doc.getElementById('btn-kf-start');
 const btnKfMid = doc.getElementById('btn-kf-mid');
 const btnKfEnd = doc.getElementById('btn-kf-end');
 
+const editCoverBtn = doc.getElementById('edit-cover-btn');
 const uploadCustomCoverBtn = doc.getElementById('upload-custom-cover-btn');
 const customCoverInput = doc.getElementById('custom-cover-input');
 const resetCustomCoverBtn = doc.getElementById('reset-custom-cover-btn');
+
+// Cover Photo Editor Modal Elements
+const editorScrim = doc.getElementById('editor-scrim');
+const coverEditorSheet = doc.getElementById('cover-editor-sheet');
+const editorCloseBtn = doc.getElementById('editor-close-btn');
+const editorCanvasContainer = doc.getElementById('editor-canvas-container');
+const interactiveEditorCanvas = doc.getElementById('interactive-editor-canvas');
+const editorZoom = doc.getElementById('editor-zoom');
+const valEditorZoom = doc.getElementById('val-editor-zoom');
+const editorPanX = doc.getElementById('editor-pan-x');
+const valEditorPanX = doc.getElementById('val-editor-panx');
+const editorPanY = doc.getElementById('editor-pan-y');
+const valEditorPanY = doc.getElementById('val-editor-pany');
+const editorBright = doc.getElementById('editor-bright');
+const valEditorBright = doc.getElementById('val-editor-bright');
+const editorContrast = doc.getElementById('editor-contrast');
+const valEditorContrast = doc.getElementById('val-editor-contrast');
+const editorSat = doc.getElementById('editor-sat');
+const valEditorSat = doc.getElementById('val-editor-sat');
+const editorResetBtn = doc.getElementById('editor-reset-btn');
+const editorApplyBtn = doc.getElementById('editor-apply-btn');
 
 // Zoom Dialog
 const zoomDialog = doc.getElementById('zoom-dialog');
@@ -196,16 +233,32 @@ function updateModeUI() {
 // Aspect Ratio & Cropping Management
 // -------------------------------------------------------------
 function updateRatioUI() {
+  const isCustomRatio = currentAspectRatio.includes(':') && 
+    !['9:16', '1:1', '4:5', '16:9'].includes(currentAspectRatio);
+
   doc.querySelectorAll('.ratio-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.getAttribute('data-ratio') === currentAspectRatio);
+    const r = btn.getAttribute('data-ratio');
+    if (r === 'custom') {
+      btn.classList.toggle('active', isCustomRatio);
+    } else {
+      btn.classList.toggle('active', r === currentAspectRatio);
+    }
   });
 
+  if (customRatioBox) {
+    customRatioBox.classList.toggle('hidden', !isCustomRatio);
+  }
+
   if (currentRatioBadge) {
-    const badgeKey = currentAspectRatio === 'original' ? 'ratioOriginal'
-      : currentAspectRatio === '9:16' ? 'ratioTikTok'
-      : currentAspectRatio === '1:1' ? 'ratioSquare'
-      : currentAspectRatio === '4:5' ? 'ratioPortrait' : 'ratioLandscape';
-    currentRatioBadge.textContent = t(badgeKey);
+    if (isCustomRatio) {
+      currentRatioBadge.textContent = `${t('ratioCustom')} (${currentAspectRatio})`;
+    } else {
+      const badgeKey = currentAspectRatio === 'original' ? 'ratioOriginal'
+        : currentAspectRatio === '9:16' ? 'ratioTikTok'
+        : currentAspectRatio === '1:1' ? 'ratioSquare'
+        : currentAspectRatio === '4:5' ? 'ratioPortrait' : 'ratioLandscape';
+      currentRatioBadge.textContent = t(badgeKey);
+    }
   }
   if (ratioHint) ratioHint.textContent = t('ratioHint');
 
@@ -217,20 +270,22 @@ function updateRatioUI() {
       previewBox.classList.remove('cropped-mode');
     } else {
       previewBox.classList.add('cropped-mode');
-      if (currentAspectRatio === '9:16') {
-        previewViewport.style.aspectRatio = '9 / 16';
+      let targetRatioValue = '9 / 16';
+      if (currentAspectRatio === '9:16') targetRatioValue = '9 / 16';
+      else if (currentAspectRatio === '1:1') targetRatioValue = '1 / 1';
+      else if (currentAspectRatio === '4:5') targetRatioValue = '4 / 5';
+      else if (currentAspectRatio === '16:9') targetRatioValue = '16 / 9';
+      else if (currentAspectRatio.includes(':')) {
+        const [w, h] = currentAspectRatio.split(':').map(Number);
+        if (w > 0 && h > 0) targetRatioValue = `${w} / ${h}`;
+      }
+
+      previewViewport.style.aspectRatio = targetRatioValue;
+      const [rw, rh] = targetRatioValue.split('/').map(Number);
+      if (rw <= rh) {
         previewViewport.style.width = 'auto';
         previewViewport.style.height = '100%';
-      } else if (currentAspectRatio === '1:1') {
-        previewViewport.style.aspectRatio = '1 / 1';
-        previewViewport.style.width = 'auto';
-        previewViewport.style.height = 'min(100%, 360px)';
-      } else if (currentAspectRatio === '4:5') {
-        previewViewport.style.aspectRatio = '4 / 5';
-        previewViewport.style.width = 'auto';
-        previewViewport.style.height = '100%';
-      } else if (currentAspectRatio === '16:9') {
-        previewViewport.style.aspectRatio = '16 / 9';
+      } else {
         previewViewport.style.width = '100%';
         previewViewport.style.height = 'auto';
       }
@@ -253,9 +308,25 @@ function updateRatioUI() {
 
 doc.querySelectorAll('.ratio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    currentAspectRatio = btn.getAttribute('data-ratio');
+    const r = btn.getAttribute('data-ratio');
+    if (r === 'custom') {
+      const w = parseInt((customRatioW && customRatioW.value) || '3', 10);
+      const h = parseInt((customRatioH && customRatioH.value) || '4', 10);
+      currentAspectRatio = `${w}:${h}`;
+      if (customRatioBox) customRatioBox.classList.remove('hidden');
+    } else {
+      currentAspectRatio = r;
+      if (customRatioBox) customRatioBox.classList.add('hidden');
+    }
     updateRatioUI();
   });
+});
+
+btnApplyCustomRatio?.addEventListener('click', () => {
+  const w = Math.max(1, parseInt((customRatioW && customRatioW.value) || '3', 10));
+  const h = Math.max(1, parseInt((customRatioH && customRatioH.value) || '4', 10));
+  currentAspectRatio = `${w}:${h}`;
+  updateRatioUI();
 });
 
 // -------------------------------------------------------------
@@ -327,6 +398,8 @@ function applyTranslations() {
   setTxt('label-ratio-11', 'ratioSquare');
   setTxt('label-ratio-45', 'ratioPortrait');
   setTxt('label-ratio-169', 'ratioLandscape');
+  setTxt('label-ratio-custom', 'ratioCustom');
+  setTxt('label-apply-custom-ratio', 'applyBtn');
 
   setTxt('label-duration-title', 'clipDurationTitle');
   setTxt('label-slider-start', 'sliderStartLabel');
@@ -342,8 +415,21 @@ function applyTranslations() {
   setTxt('btn-kf-mid', 'btnKfMid');
   setTxt('btn-kf-end', 'btnKfEnd');
 
+  setTxt('label-edit-cover', 'editCoverBtn');
   setTxt('label-upload-cover', 'btnUploadCustomCover');
   setTxt('label-reset-cover', 'btnResetVideoCover');
+
+  // Cover Editor Modal Labels
+  setTxt('label-editor-title', 'editCoverModalTitle');
+  setTxt('label-editor-hint', 'dragHint');
+  setTxt('label-edit-zoom', 'zoomLabel');
+  setTxt('label-edit-panx', 'panXLabel');
+  setTxt('label-edit-pany', 'panYLabel');
+  setTxt('label-edit-bright', 'brightnessLabel');
+  setTxt('label-edit-contrast', 'contrastLabel');
+  setTxt('label-edit-sat', 'saturationLabel');
+  setTxt('label-editor-reset', 'resetBtn');
+  setTxt('label-editor-apply', 'applyBtn');
 
   if (customCoverState && customCoverState.active) {
     setTxt('label-cover-source', 'customCoverActive');
@@ -401,18 +487,24 @@ function loadVideo(file) {
   sourceVideo.onloadedmetadata = () => {
     const dur = Math.max(0.5, sourceVideo.duration || 3.0);
 
-    sliderStart.min = "0";
-    sliderStart.max = dur.toFixed(2);
-    sliderStart.value = "0";
+    if (sliderStart) {
+      sliderStart.min = "0";
+      sliderStart.max = dur.toFixed(2);
+      sliderStart.value = "0";
+    }
 
     const defaultEnd = Math.min(2.5, dur);
-    sliderEnd.min = "0";
-    sliderEnd.max = dur.toFixed(2);
-    sliderEnd.value = defaultEnd.toFixed(2);
+    if (sliderEnd) {
+      sliderEnd.min = "0";
+      sliderEnd.max = dur.toFixed(2);
+      sliderEnd.value = defaultEnd.toFixed(2);
+    }
 
-    sliderKeyframe.min = "0";
-    sliderKeyframe.max = dur.toFixed(2);
-    sliderKeyframe.value = "0";
+    if (sliderKeyframe) {
+      sliderKeyframe.min = "0";
+      sliderKeyframe.max = dur.toFixed(2);
+      sliderKeyframe.value = "0";
+    }
 
     updateSliderUI();
     updateRatioUI();
@@ -427,6 +519,7 @@ function loadVideo(file) {
     trimmerPanel?.classList.remove('hidden');
     actionBar?.classList.remove('hidden');
     closeSheet();
+    closeEditorSheet();
   };
 
   sourceVideo.addEventListener('loadeddata', () => {
@@ -616,32 +709,38 @@ btnStepNext5?.addEventListener('click', () => stepKeyframe(5 * FRAME_STEP));
 // Keyframe quick buttons
 btnKfStart?.addEventListener('click', () => {
   if (customCoverState && customCoverState.active) resetCustomCoverUI();
-  sliderKeyframe.value = sliderStart.value;
-  sliderKeyframe.dispatchEvent(new Event('input'));
+  if (sliderKeyframe && sliderStart) {
+    sliderKeyframe.value = sliderStart.value;
+    sliderKeyframe.dispatchEvent(new Event('input'));
+  }
 });
 
 btnKfMid?.addEventListener('click', () => {
   if (customCoverState && customCoverState.active) resetCustomCoverUI();
-  const mid = (parseFloat(sliderStart.value) + parseFloat(sliderEnd.value)) / 2;
-  sliderKeyframe.value = mid.toFixed(3);
-  sliderKeyframe.dispatchEvent(new Event('input'));
+  if (sliderKeyframe && sliderStart && sliderEnd) {
+    const mid = (parseFloat(sliderStart.value || '0') + parseFloat(sliderEnd.value || '2.5')) / 2;
+    sliderKeyframe.value = mid.toFixed(3);
+    sliderKeyframe.dispatchEvent(new Event('input'));
+  }
 });
 
 btnKfEnd?.addEventListener('click', () => {
   if (customCoverState && customCoverState.active) resetCustomCoverUI();
-  sliderKeyframe.value = sliderEnd.value;
-  sliderKeyframe.dispatchEvent(new Event('input'));
+  if (sliderKeyframe && sliderEnd) {
+    sliderKeyframe.value = sliderEnd.value;
+    sliderKeyframe.dispatchEvent(new Event('input'));
+  }
 });
 
 sliderKeyframe?.addEventListener('input', () => {
   if (customCoverState && customCoverState.active) {
     resetCustomCoverUI();
   }
-  const time = parseFloat(sliderKeyframe.value);
+  const time = parseFloat((sliderKeyframe && sliderKeyframe.value) || '0');
   updateKeyframeBadge(time);
   updateSliderProgress(sliderKeyframe);
   renderKeyframePreview(time);
-  sourceVideo.currentTime = time;
+  if (sourceVideo) sourceVideo.currentTime = time;
 });
 
 // Custom Cover Image Upload Handlers
@@ -664,13 +763,14 @@ customCoverInput?.addEventListener('change', async (e) => {
       resetCustomCoverBtn?.classList.remove('hidden');
 
       drawCustomCoverToCanvas(processed.dataUrl);
-      updateKeyframeBadge(parseFloat(sliderKeyframe.value));
+      const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
+      updateKeyframeBadge(kf);
       showSnackbar(t('customCoverSuccess'));
     } catch (err) {
       console.error(err);
       showSnackbar("Gagal memuat gambar: " + err.message);
     }
-    customCoverInput.value = '';
+    if (customCoverInput) customCoverInput.value = '';
   }
 });
 
@@ -695,6 +795,235 @@ zoomDialog?.addEventListener('click', (e) => {
     zoomDialog?.classList.remove('open');
   }
 });
+
+// -------------------------------------------------------------
+// Cover Photo Editor & Crop Modal
+// -------------------------------------------------------------
+function openEditorSheet() {
+  if (!sourceVideo && !customCoverState) return;
+
+  editorState = {
+    zoom: 1.0,
+    panX: 0,
+    panY: 0,
+    brightness: 100,
+    contrast: 100,
+    saturation: 100
+  };
+  syncEditorControlSliders();
+
+  const img = new Image();
+  img.onload = () => {
+    editorSourceImage = img;
+    renderEditorCanvas();
+    editorScrim?.classList.add('open');
+    coverEditorSheet?.classList.add('open');
+    coverEditorSheet?.setAttribute('aria-hidden', 'false');
+  };
+
+  // If there's an active custom cover, load its image, else extract current frame
+  if (customCoverState && customCoverState.dataUrl) {
+    img.src = customCoverState.dataUrl;
+  } else if (currentCoverDataUrl) {
+    img.src = currentCoverDataUrl;
+  } else {
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+    extractCoverFrame(sourceVideo, kf, 0.92, 1280, currentRotation, currentAspectRatio)
+      .then(res => { img.src = res.dataUrl; })
+      .catch(console.error);
+  }
+}
+
+function closeEditorSheet() {
+  editorScrim?.classList.remove('open');
+  coverEditorSheet?.classList.remove('open');
+  coverEditorSheet?.setAttribute('aria-hidden', 'true');
+}
+
+function syncEditorControlSliders() {
+  if (editorZoom) { editorZoom.value = editorState.zoom; valEditorZoom.textContent = `${editorState.zoom.toFixed(1)}x`; }
+  if (editorPanX) { editorPanX.value = editorState.panX; valEditorPanX.textContent = `${editorState.panX}%`; }
+  if (editorPanY) { editorPanY.value = editorState.panY; valEditorPanY.textContent = `${editorState.panY}%`; }
+  if (editorBright) { editorBright.value = editorState.brightness; valEditorBright.textContent = `${editorState.brightness}%`; }
+  if (editorContrast) { editorContrast.value = editorState.contrast; valEditorContrast.textContent = `${editorState.contrast}%`; }
+  if (editorSat) { editorSat.value = editorState.saturation; valEditorSat.textContent = `${editorState.saturation}%`; }
+
+  updateSliderProgress(editorZoom);
+  updateSliderProgress(editorPanX);
+  updateSliderProgress(editorPanY);
+  updateSliderProgress(editorBright);
+  updateSliderProgress(editorContrast);
+  updateSliderProgress(editorSat);
+}
+
+function renderEditorCanvas() {
+  if (!editorSourceImage || !interactiveEditorCanvas) return;
+
+  const w = 600;
+  const h = 600;
+  interactiveEditorCanvas.width = w;
+  interactiveEditorCanvas.height = h;
+  const ctx = interactiveEditorCanvas.getContext('2d');
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+
+  // Apply visual adjustments
+  ctx.filter = `brightness(${editorState.brightness}%) contrast(${editorState.contrast}%) saturate(${editorState.saturation}%)`;
+
+  const imgW = editorSourceImage.naturalWidth || editorSourceImage.width;
+  const imgH = editorSourceImage.naturalHeight || editorSourceImage.height;
+
+  // Scale to fit canvas with zoom
+  const baseScale = Math.min(w / imgW, h / imgH);
+  const totalScale = baseScale * editorState.zoom;
+  const drawW = imgW * totalScale;
+  const drawH = imgH * totalScale;
+
+  // Pan offsets in pixels
+  const offsetX = (w - drawW) / 2 + (editorState.panX / 100) * (w / 2);
+  const offsetY = (h - drawH) / 2 + (editorState.panY / 100) * (h / 2);
+
+  ctx.drawImage(editorSourceImage, offsetX, offsetY, drawW, drawH);
+  ctx.restore();
+}
+
+// Editor Sliders Event Listeners
+editorZoom?.addEventListener('input', () => {
+  if (!editorZoom) return;
+  editorState.zoom = parseFloat(editorZoom.value || '1');
+  if (valEditorZoom) valEditorZoom.textContent = `${editorState.zoom.toFixed(2)}x`;
+  updateSliderProgress(editorZoom);
+  renderEditorCanvas();
+});
+
+editorPanX?.addEventListener('input', () => {
+  if (!editorPanX) return;
+  editorState.panX = parseInt(editorPanX.value || '0', 10);
+  if (valEditorPanX) valEditorPanX.textContent = `${editorState.panX}%`;
+  updateSliderProgress(editorPanX);
+  renderEditorCanvas();
+});
+
+editorPanY?.addEventListener('input', () => {
+  if (!editorPanY) return;
+  editorState.panY = parseInt(editorPanY.value || '0', 10);
+  if (valEditorPanY) valEditorPanY.textContent = `${editorState.panY}%`;
+  updateSliderProgress(editorPanY);
+  renderEditorCanvas();
+});
+
+editorBright?.addEventListener('input', () => {
+  if (!editorBright) return;
+  editorState.brightness = parseInt(editorBright.value || '100', 10);
+  if (valEditorBright) valEditorBright.textContent = `${editorState.brightness}%`;
+  updateSliderProgress(editorBright);
+  renderEditorCanvas();
+});
+
+editorContrast?.addEventListener('input', () => {
+  if (!editorContrast) return;
+  editorState.contrast = parseInt(editorContrast.value || '100', 10);
+  if (valEditorContrast) valEditorContrast.textContent = `${editorState.contrast}%`;
+  updateSliderProgress(editorContrast);
+  renderEditorCanvas();
+});
+
+editorSat?.addEventListener('input', () => {
+  if (!editorSat) return;
+  editorState.saturation = parseInt(editorSat.value || '100', 10);
+  if (valEditorSat) valEditorSat.textContent = `${editorState.saturation}%`;
+  updateSliderProgress(editorSat);
+  renderEditorCanvas();
+});
+
+// Touch & Drag on Interactive Editor Canvas
+let isDraggingEditor = false;
+let startDragX = 0;
+let startDragY = 0;
+let initialPanX = 0;
+let initialPanY = 0;
+
+editorCanvasContainer?.addEventListener('pointerdown', (e) => {
+  isDraggingEditor = true;
+  startDragX = e.clientX;
+  startDragY = e.clientY;
+  initialPanX = editorState.panX;
+  initialPanY = editorState.panY;
+  editorCanvasContainer.setPointerCapture(e.pointerId);
+});
+
+editorCanvasContainer?.addEventListener('pointermove', (e) => {
+  if (!isDraggingEditor) return;
+  const dx = e.clientX - startDragX;
+  const dy = e.clientY - startDragY;
+  const containerW = editorCanvasContainer.clientWidth || 300;
+  const containerH = editorCanvasContainer.clientHeight || 250;
+
+  let newPanX = initialPanX + (dx / containerW) * 100;
+  let newPanY = initialPanY + (dy / containerH) * 100;
+
+  editorState.panX = Math.max(-100, Math.min(100, Math.round(newPanX)));
+  editorState.panY = Math.max(-100, Math.min(100, Math.round(newPanY)));
+
+  if (editorPanX) editorPanX.value = editorState.panX;
+  if (valEditorPanX) valEditorPanX.textContent = `${editorState.panX}%`;
+  if (editorPanY) editorPanY.value = editorState.panY;
+  if (valEditorPanY) valEditorPanY.textContent = `${editorState.panY}%`;
+
+  updateSliderProgress(editorPanX);
+  updateSliderProgress(editorPanY);
+  renderEditorCanvas();
+});
+
+editorCanvasContainer?.addEventListener('pointerup', (e) => {
+  isDraggingEditor = false;
+  try { editorCanvasContainer.releasePointerCapture(e.pointerId); } catch (_) {}
+});
+
+editorResetBtn?.addEventListener('click', () => {
+  editorState = {
+    zoom: 1.0,
+    panX: 0,
+    panY: 0,
+    brightness: 100,
+    contrast: 100,
+    saturation: 100
+  };
+  syncEditorControlSliders();
+  renderEditorCanvas();
+});
+
+editorApplyBtn?.addEventListener('click', async () => {
+  if (!interactiveEditorCanvas) return;
+
+  const dataUrl = interactiveEditorCanvas.toDataURL('image/jpeg', 0.94);
+  const blob = await new Promise(resolve => interactiveEditorCanvas.toBlob(resolve, 'image/jpeg', 0.94));
+  const uint8Array = new Uint8Array(await blob.arrayBuffer());
+
+  customCoverState = {
+    blob,
+    uint8Array,
+    width: interactiveEditorCanvas.width,
+    height: interactiveEditorCanvas.height,
+    dataUrl,
+    active: true
+  };
+
+  coverSourceBadge?.classList.add('custom');
+  if (labelCoverSource) labelCoverSource.textContent = t('customCoverActive');
+  resetCustomCoverBtn?.classList.remove('hidden');
+
+  drawCustomCoverToCanvas(dataUrl);
+  const kfVal = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
+  updateKeyframeBadge(kfVal);
+  closeEditorSheet();
+  showSnackbar(t('coverAppliedSnackbar'));
+});
+
+editCoverBtn?.addEventListener('click', openEditorSheet);
+editorCloseBtn?.addEventListener('click', closeEditorSheet);
+editorScrim?.addEventListener('click', closeEditorSheet);
 
 // -------------------------------------------------------------
 // Play / Pause Video Controller
@@ -759,7 +1088,7 @@ dropzone?.addEventListener('click', (e) => {
 videoFileInput?.addEventListener('change', (e) => {
   if (e.target.files && e.target.files[0]) {
     loadVideo(e.target.files[0]);
-    videoFileInput.value = '';
+    if (videoFileInput) videoFileInput.value = '';
   }
 });
 
@@ -772,8 +1101,9 @@ changeVideoBtn?.addEventListener('click', (e) => {
   trimmerPanel?.classList.add('hidden');
   actionBar?.classList.add('hidden');
   closeSheet();
+  closeEditorSheet();
   dropzone?.classList.remove('hidden');
-  videoFileInput.value = '';
+  if (videoFileInput) videoFileInput.value = '';
 });
 
 // -------------------------------------------------------------
@@ -811,6 +1141,7 @@ convertBtn?.addEventListener('click', async () => {
   convertBtn.disabled = true;
   progressContainer?.classList.remove('hidden');
   closeSheet();
+  closeEditorSheet();
   sourceVideo.pause();
   previewBox?.classList.remove('playing');
   if (playIcon) playIcon.textContent = 'play_arrow';
@@ -830,7 +1161,7 @@ convertBtn?.addEventListener('click', async () => {
   try {
     const targetMode = getSelectedMode();
 
-    // 1. Prepare Cover Photo (Custom uploaded image OR extracted video frame with aspect ratio crop)
+    // 1. Prepare Cover Photo (Custom/Edited image OR extracted video frame with aspect ratio crop)
     updateProgress(15, t('progressExtractCover'));
     let coverResult;
     if (customCoverState && customCoverState.active) {

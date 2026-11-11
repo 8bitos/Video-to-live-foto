@@ -17,8 +17,8 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Material Symbols Rounded subsetted with photo studio & zoom icons -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0..1,0&icon_names=add_photo_alternate,android,bolt,check,check_circle,chevron_left,chevron_right,close,dark_mode,download,edit,expand_more,fast_forward,fast_rewind,hd,info,light_mode,motion_photos_on,movie,pause,photo_camera,play_arrow,refresh,rotate_right,share,smartphone,touch_app,translate,undo,video_library,zoom_in&display=block">
+  <!-- Material Symbols Rounded subsetted with photo studio, crop & zoom icons -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0..1,0&icon_names=add_photo_alternate,android,bolt,check,check_circle,chevron_left,chevron_right,close,crop,dark_mode,download,edit,expand_more,fast_forward,fast_rewind,hd,info,light_mode,motion_photos_on,movie,pause,photo_camera,play_arrow,refresh,rotate_right,share,smartphone,touch_app,translate,tune,undo,video_library,zoom_in&display=block">
 
   <style>
     /* ---------- Material 3 tokens ---------- */
@@ -129,6 +129,7 @@
     .btn-filled { background: var(--primary); color: var(--on-primary); }
     .btn-tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
     .btn-lg { height: 56px; border-radius: 28px; font-size: 16px; }
+    .btn-sm { height: 38px; padding: 0 16px; border-radius: 19px; font-size: 13px; }
     .btn-block { width: 100%; }
 
     /* ---------- Empty state ---------- */
@@ -222,6 +223,7 @@
       transition: background .2s, border-color .2s;
     }
     .chip.active { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
+
     .ratio-chips {
       display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
       scrollbar-width: none; -ms-overflow-style: none;
@@ -231,10 +233,27 @@
       flex: 0 0 auto; padding: 0 16px; font-size: 13px; white-space: nowrap;
     }
 
+    /* Custom Ratio Box */
+    .custom-ratio-box {
+      margin-top: 10px; padding: 12px; background: var(--surface-2);
+      border-radius: 18px; border: 1px solid var(--outline-variant);
+    }
+    .custom-ratio-row {
+      display: flex; align-items: center; gap: 8px; justify-content: center;
+    }
+    .cr-label { font-size: 13px; font-weight: 500; color: var(--on-surface-variant); }
+    .cr-colon { font-size: 16px; font-weight: 700; color: var(--primary); }
+    .custom-ratio-row input {
+      width: 60px; height: 38px; border-radius: 10px; border: 1px solid var(--outline);
+      background: var(--surface-1); color: var(--on-surface); text-align: center;
+      font-size: 14px; font-weight: 600;
+    }
+    .custom-ratio-row input:focus { outline: 2px solid var(--primary); }
+
     /* Sliders (M3 expressive style) */
-    .slider-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-    .slider-row label { width: 56px; font-size: 13px; color: var(--on-surface-variant); }
-    .slider-row output { min-width: 44px; text-align: right; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .slider-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+    .slider-row label { width: 72px; font-size: 13px; color: var(--on-surface-variant); flex-shrink: 0; }
+    .slider-row output { min-width: 44px; text-align: right; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; flex-shrink: 0; }
     input[type=range] {
       -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 44px;
       background: transparent; touch-action: pan-y; cursor: pointer; --p: 0%;
@@ -264,7 +283,7 @@
     }
     .cover-stage canvas {
       max-width: 100%; max-height: 100%; object-fit: contain; display: block;
-      transition: transform .2s ease;
+      border-radius: 12px; transition: transform .2s ease;
     }
     .cover-stage:active canvas { transform: scale(0.98); }
     .cover-stage .source-tag {
@@ -302,12 +321,12 @@
     }
     .mini-preset-row button:active { background: var(--secondary-container); }
 
-    /* Custom Image Cover Actions */
+    /* Custom Image & Edit Cover Actions */
     .custom-cover-actions {
       display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;
     }
     .custom-action-btn {
-      flex: 1; min-width: 140px; height: 40px; border-radius: 20px;
+      flex: 1; min-width: 130px; height: 40px; border-radius: 20px;
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
       font-size: 13px; font-weight: 500;
       border: 1px dashed var(--outline); color: var(--primary);
@@ -347,7 +366,7 @@
     .progress-track { height: 6px; border-radius: 3px; background: var(--secondary-container); overflow: hidden; }
     .progress-fill { height: 100%; width: 0; background: var(--primary); border-radius: 3px; transition: width .15s linear; }
 
-    /* ---------- Result bottom sheet ---------- */
+    /* ---------- Result & Editor Bottom Sheets ---------- */
     .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .25s; }
     .scrim.open { opacity: 1; pointer-events: auto; }
     .sheet {
@@ -389,7 +408,21 @@
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .sheet-note { font-size: 12px; color: var(--on-surface-variant); line-height: 1.45; margin-top: 12px; text-align: center; }
 
-    /* ---------- Fullscreen Image Zoom Dialog ---------- */
+    /* Cover Photo Editor Sheet Specifics */
+    .editor-sheet { max-height: 96dvh; }
+    .editor-canvas-container {
+      position: relative; background: #000; border-radius: 20px; overflow: hidden;
+      height: min(34vh, 250px); display: flex; align-items: center; justify-content: center;
+      touch-action: none; user-select: none; margin-bottom: 12px; cursor: grab;
+    }
+    .editor-canvas-container:active { cursor: grabbing; }
+    .editor-canvas-container canvas {
+      max-width: 100%; max-height: 100%; object-fit: contain; display: block;
+    }
+    .editor-controls { display: grid; gap: 4px; }
+    .editor-divider { height: 1px; background: var(--outline-variant); margin: 6px 0; opacity: .5; }
+
+    /* ---------- Fullscreen Cover Zoom Dialog ---------- */
     .zoom-dialog {
       position: fixed; inset: 0; z-index: 90;
       display: flex; align-items: center; justify-content: center;
@@ -504,7 +537,24 @@
           <button type="button" class="chip ratio-btn" data-ratio="16:9">
             <span id="label-ratio-169">16:9 Lanskap</span>
           </button>
+          <button type="button" class="chip ratio-btn" data-ratio="custom">
+            <span id="label-ratio-custom">Kustom</span>
+          </button>
         </div>
+
+        <!-- Inline Custom Ratio Input Box -->
+        <div class="custom-ratio-box hidden" id="custom-ratio-box">
+          <div class="custom-ratio-row">
+            <span class="cr-label">Rasio:</span>
+            <input type="number" id="custom-ratio-w" min="1" max="100" value="3" aria-label="Lebar rasio">
+            <span class="cr-colon">:</span>
+            <input type="number" id="custom-ratio-h" min="1" max="100" value="4" aria-label="Tinggi rasio">
+            <button type="button" class="btn btn-filled btn-sm" id="btn-apply-custom-ratio">
+              <span class="icon">check</span><span id="label-apply-custom-ratio">Terapkan</span>
+            </button>
+          </div>
+        </div>
+
         <p class="seg-hint" id="ratio-hint"></p>
       </div>
 
@@ -545,7 +595,7 @@
         </div>
       </div>
 
-      <!-- Enlarged Cover Photo Studio with Frame Stepper & Custom Upload -->
+      <!-- Enlarged Cover Photo Studio with Frame Stepper, Custom Upload & Editor -->
       <div class="section">
         <div class="section-title">
           <span id="label-cover-title">Foto sampul</span>
@@ -595,8 +645,13 @@
             </div>
           </div>
 
-          <!-- Custom External Image Upload for Cover -->
+          <!-- Cover Photo Actions: Edit & Crop / Upload / Reset -->
           <div class="custom-cover-actions">
+            <button type="button" class="custom-action-btn" id="edit-cover-btn">
+              <span class="icon">crop</span>
+              <span id="label-edit-cover">Edit &amp; Crop Sampul</span>
+            </button>
+
             <button type="button" class="custom-action-btn" id="upload-custom-cover-btn">
               <span class="icon">add_photo_alternate</span>
               <span id="label-upload-cover">Upload Foto Lain</span>
@@ -668,6 +723,77 @@
     <p class="sheet-note" id="sheet-note"></p>
   </section>
 
+  <!-- Cover Photo Editor Bottom Sheet -->
+  <div class="scrim" id="editor-scrim"></div>
+  <section class="sheet editor-sheet" id="cover-editor-sheet" aria-hidden="true">
+    <div class="handle"></div>
+    <div class="sheet-head">
+      <div class="badge"><span class="icon">crop</span></div>
+      <div class="titles">
+        <h3 id="label-editor-title">Edit &amp; Crop Foto Sampul</h3>
+        <p id="label-editor-hint">Geser canvas atau slider untuk mengatur framing</p>
+      </div>
+      <button class="icon-btn" id="editor-close-btn" aria-label="Tutup"><span class="icon">close</span></button>
+    </div>
+
+    <!-- Interactive Editor Canvas Container -->
+    <div class="editor-canvas-container" id="editor-canvas-container">
+      <canvas id="interactive-editor-canvas" width="600" height="600"></canvas>
+    </div>
+
+    <!-- Framing & Adjustment Sliders -->
+    <div class="editor-controls">
+      <!-- Zoom -->
+      <div class="slider-row">
+        <label id="label-edit-zoom">Zoom</label>
+        <input type="range" id="editor-zoom" min="1" max="3" step="0.05" value="1">
+        <output id="val-editor-zoom">1.0x</output>
+      </div>
+      <!-- Pan X -->
+      <div class="slider-row">
+        <label id="label-edit-panx">Geser X</label>
+        <input type="range" id="editor-pan-x" min="-100" max="100" step="1" value="0">
+        <output id="val-editor-panx">0%</output>
+      </div>
+      <!-- Pan Y -->
+      <div class="slider-row">
+        <label id="label-edit-pany">Geser Y</label>
+        <input type="range" id="editor-pan-y" min="-100" max="100" step="1" value="0">
+        <output id="val-editor-pany">0%</output>
+      </div>
+      
+      <div class="editor-divider"></div>
+
+      <!-- Color adjustments -->
+      <div class="slider-row">
+        <label id="label-edit-bright">Kecerahan</label>
+        <input type="range" id="editor-bright" min="50" max="150" step="1" value="100">
+        <output id="val-editor-bright">100%</output>
+      </div>
+      <div class="slider-row">
+        <label id="label-edit-contrast">Kontras</label>
+        <input type="range" id="editor-contrast" min="50" max="150" step="1" value="100">
+        <output id="val-editor-contrast">100%</output>
+      </div>
+      <div class="slider-row">
+        <label id="label-edit-sat">Saturasi</label>
+        <input type="range" id="editor-sat" min="0" max="200" step="2" value="100">
+        <output id="val-editor-sat">100%</output>
+      </div>
+    </div>
+
+    <div class="sheet-actions">
+      <div class="row2">
+        <button class="btn btn-tonal" id="editor-reset-btn">
+          <span class="icon">undo</span><span id="label-editor-reset">Reset</span>
+        </button>
+        <button class="btn btn-filled" id="editor-apply-btn">
+          <span class="icon">check</span><span id="label-editor-apply">Terapkan</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <!-- Fullscreen Cover Zoom Dialog -->
   <div class="zoom-dialog" id="zoom-dialog">
     <div class="zoom-box">
@@ -678,6 +804,6 @@
 
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.3"></script>
+  <script type="module" src="./app.js?v=4.5"></script>
 </body>
 </html>
