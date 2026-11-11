@@ -3,13 +3,13 @@
  * 100% Client-Side Universal Converter
  */
 
-import { translations } from './i18n.js?v=3.0';
+import { translations } from './i18n.js?v=3.2';
 import { 
   createGoogleMotionPhoto, 
   createAppleLivePhoto, 
   extractCoverFrame, 
   trimVideoClip 
-} from './motionEngine.js?v=3.0';
+} from './motionEngine.js?v=3.2';
 
 // Global State
 let currentLang = 'id';
@@ -377,6 +377,13 @@ convertBtn?.addEventListener('click', async () => {
   convertBtn.disabled = true;
   progressContainer.classList.remove('hidden');
   resultCard.classList.add('hidden');
+  sourceVideo.pause();
+
+  // Free previous conversion memory
+  if (generatedResult.clipVideoUrl) {
+    try { URL.revokeObjectURL(generatedResult.clipVideoUrl); } catch (_) {}
+    generatedResult.clipVideoUrl = '';
+  }
 
   const updateProgress = (pct, text) => {
     progressPercent.textContent = `${pct}%`;
