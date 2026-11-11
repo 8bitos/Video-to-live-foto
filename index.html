@@ -17,8 +17,8 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Material Symbols Rounded subsetted with translate & check icons -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0..1,0&icon_names=android,bolt,check,check_circle,close,dark_mode,download,edit,expand_more,hd,info,light_mode,motion_photos_on,movie,pause,photo_camera,play_arrow,refresh,rotate_right,share,smartphone,touch_app,translate,video_library&display=block">
+  <!-- Material Symbols Rounded subsetted with photo studio & zoom icons -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,0..1,0&icon_names=add_photo_alternate,android,bolt,check,check_circle,chevron_left,chevron_right,close,dark_mode,download,edit,expand_more,fast_forward,fast_rewind,hd,info,light_mode,motion_photos_on,movie,pause,photo_camera,play_arrow,refresh,rotate_right,share,smartphone,touch_app,translate,undo,video_library,zoom_in&display=block">
 
   <style>
     /* ---------- Material 3 tokens ---------- */
@@ -30,7 +30,7 @@
       --on-surface: #191c20; --on-surface-variant: #43474e;
       --outline: #73777f; --outline-variant: #c3c7cf;
       --success: #146c2e; --success-container: #b7f0bb;
-      --scrim: rgba(0, 0, 0, .45);
+      --scrim: rgba(0, 0, 0, .55);
       color-scheme: light;
     }
     html.dark {
@@ -148,7 +148,7 @@
     /* ---------- Editor Preview ---------- */
     .preview {
       position: relative; background: #000; border-radius: 28px; overflow: hidden;
-      height: min(50vh, 440px); min-height: 240px; margin-top: 8px;
+      height: min(48vh, 420px); min-height: 240px; margin-top: 8px;
       display: flex; align-items: center; justify-content: center;
     }
     .preview video {
@@ -157,7 +157,7 @@
       background: #000;
     }
     .overlay-chip {
-      position: absolute; background: rgba(0, 0, 0, .58); color: #fff;
+      position: absolute; background: rgba(0, 0, 0, .6); color: #fff;
       border-radius: 8px; padding: 4px 8px; font-size: 12px; font-variant-numeric: tabular-nums;
       backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 10;
     }
@@ -234,19 +234,71 @@
     input[type=range]::-moz-range-progress { height: 16px; border-radius: 8px; background: var(--primary); }
     input[type=range]::-moz-range-thumb { width: 6px; height: 36px; border-radius: 3px; background: var(--primary); border: 2px solid var(--surface-1); }
 
-    /* Cover */
-    .cover { display: flex; gap: 14px; align-items: center; }
-    .cover canvas {
-      width: 76px; height: 76px; border-radius: 18px; background: #000;
-      object-fit: cover; flex-shrink: 0; display: block;
+    /* ---------- Cover Photo Studio ---------- */
+    .cover-card {
+      background: var(--surface-1); border-radius: 24px; padding: 16px; display: grid; gap: 12px;
     }
-    .cover-body { flex: 1; min-width: 0; }
-    .mini-btns { display: flex; gap: 6px; }
-    .mini-btns button {
+    .cover-stage {
+      position: relative; background: #000; border-radius: 20px; overflow: hidden;
+      height: 210px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; user-select: none;
+    }
+    .cover-stage canvas {
+      max-width: 100%; max-height: 100%; object-fit: contain; display: block;
+      transition: transform .2s ease;
+    }
+    .cover-stage:active canvas { transform: scale(0.98); }
+    .cover-stage .source-tag {
+      top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(0,0,0,.68);
+    }
+    .cover-stage .source-tag.custom {
+      background: var(--primary); color: var(--on-primary); font-weight: 500;
+    }
+    .cover-stage .source-tag .icon { font-size: 15px; }
+    .cover-stage .zoom-tag {
+      bottom: 10px; right: 10px; display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(0,0,0,.65); font-size: 11px;
+    }
+    .cover-stage .zoom-tag .icon { font-size: 16px; }
+
+    /* Frame Steppers */
+    .frame-stepper-box { display: grid; gap: 8px; }
+    .stepper-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .step-btn {
+      flex: 1; height: 38px; border-radius: 12px; background: var(--surface-2);
+      color: var(--on-surface); font-size: 12px; font-weight: 600;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+      transition: background .15s, transform .1s;
+    }
+    .step-btn:active { background: var(--secondary-container); transform: scale(.96); }
+    .step-btn .icon { font-size: 16px; }
+
+    .mini-preset-row { display: flex; gap: 6px; }
+    .mini-preset-row button {
       flex: 1; height: 32px; border-radius: 16px; background: var(--surface-3);
       font-size: 12px; font-weight: 500; color: var(--on-surface-variant);
     }
-    .mini-btns button:active { background: var(--secondary-container); }
+    .mini-preset-row button:active { background: var(--secondary-container); }
+
+    /* Custom Image Cover Actions */
+    .custom-cover-actions {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;
+    }
+    .custom-action-btn {
+      flex: 1; min-width: 140px; height: 40px; border-radius: 20px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      font-size: 13px; font-weight: 500;
+      border: 1px dashed var(--outline); color: var(--primary);
+      background: transparent; transition: background .15s;
+    }
+    .custom-action-btn:active { background: var(--secondary-container); }
+    .custom-action-btn .icon { font-size: 18px; }
+    .custom-action-btn.reset {
+      border: 1px solid var(--outline-variant); color: var(--on-surface-variant);
+    }
 
     /* Guide */
     details.guide { margin-top: 20px; background: var(--surface-1); border-radius: 24px; padding: 0 16px; }
@@ -317,6 +369,29 @@
     .sheet-actions { display: grid; gap: 8px; margin-top: 16px; }
     .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .sheet-note { font-size: 12px; color: var(--on-surface-variant); line-height: 1.45; margin-top: 12px; text-align: center; }
+
+    /* ---------- Fullscreen Image Zoom Dialog ---------- */
+    .zoom-dialog {
+      position: fixed; inset: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px; background: rgba(0,0,0,.85);
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .zoom-dialog.open { opacity: 1; pointer-events: auto; }
+    .zoom-box {
+      position: relative; max-width: 94vw; max-height: 85vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .zoom-box img {
+      max-width: 100%; max-height: 80vh; object-fit: contain; border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.6);
+    }
+    .zoom-box .zoom-close-btn {
+      position: absolute; top: -14px; right: -14px; width: 44px; height: 44px;
+      border-radius: 50%; background: var(--surface-1); color: var(--on-surface);
+      display: grid; place-items: center; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    }
 
     /* ---------- Snackbar ---------- */
     .snackbar {
@@ -423,17 +498,68 @@
         </div>
       </div>
 
+      <!-- Enlarged Cover Photo Studio with Frame Stepper & Custom Upload -->
       <div class="section">
-        <div class="section-title"><span id="label-cover-title">Foto sampul</span> <span class="value" id="keyframe-pos-val">0.0s</span></div>
-        <div class="card cover">
-          <canvas id="keyframe-canvas" width="152" height="152"></canvas>
-          <div class="cover-body">
-            <input type="range" id="slider-keyframe" min="0" max="10" step="0.05" value="0" aria-label="Posisi foto sampul">
-            <div class="mini-btns">
+        <div class="section-title">
+          <span id="label-cover-title">Foto sampul</span>
+          <span class="value" id="keyframe-pos-val">0.0s</span>
+        </div>
+        
+        <div class="cover-card">
+          <!-- Big Interactive Cover Stage (Tap to Zoom) -->
+          <div class="cover-stage" id="cover-stage-btn" title="Ketuk untuk perbesar">
+            <canvas id="keyframe-canvas" width="360" height="240"></canvas>
+            
+            <span class="overlay-chip source-tag" id="cover-source-badge">
+              <span class="icon">photo_camera</span>
+              <span id="label-cover-source">Frame Video</span>
+            </span>
+
+            <span class="overlay-chip zoom-tag">
+              <span class="icon">zoom_in</span>
+              <span id="label-zoom-hint">Ketuk untuk perbesar</span>
+            </span>
+          </div>
+
+          <!-- Precise Frame-by-Frame Stepper -->
+          <div class="frame-stepper-box">
+            <div class="stepper-row">
+              <button type="button" class="step-btn" id="btn-step-prev-5" title="-5 Frame">
+                <span class="icon">fast_rewind</span><span id="label-step-p5">-5</span>
+              </button>
+              <button type="button" class="step-btn" id="btn-step-prev-1" title="-1 Frame">
+                <span class="icon">chevron_left</span><span id="label-step-p1">-1 frame</span>
+              </button>
+              <button type="button" class="step-btn" id="btn-step-next-1" title="+1 Frame">
+                <span id="label-step-n1">+1 frame</span><span class="icon">chevron_right</span>
+              </button>
+              <button type="button" class="step-btn" id="btn-step-next-5" title="+5 Frame">
+                <span id="label-step-n5">+5</span><span class="icon">fast_forward</span>
+              </button>
+            </div>
+
+            <!-- Fine-grained timeline slider for cover frame -->
+            <input type="range" id="slider-keyframe" min="0" max="10" step="0.033" value="0" aria-label="Posisi foto sampul">
+
+            <div class="mini-preset-row">
               <button type="button" id="btn-kf-start">Awal</button>
               <button type="button" id="btn-kf-mid">Tengah</button>
               <button type="button" id="btn-kf-end">Akhir</button>
             </div>
+          </div>
+
+          <!-- Custom External Image Upload for Cover -->
+          <div class="custom-cover-actions">
+            <button type="button" class="custom-action-btn" id="upload-custom-cover-btn">
+              <span class="icon">add_photo_alternate</span>
+              <span id="label-upload-cover">Upload Foto Lain</span>
+            </button>
+            <input type="file" id="custom-cover-input" accept="image/*" hidden>
+
+            <button type="button" class="custom-action-btn reset hidden" id="reset-custom-cover-btn">
+              <span class="icon">undo</span>
+              <span id="label-reset-cover">Gunakan Frame Video</span>
+            </button>
           </div>
         </div>
       </div>
@@ -495,8 +621,16 @@
     <p class="sheet-note" id="sheet-note"></p>
   </section>
 
+  <!-- Fullscreen Cover Zoom Dialog -->
+  <div class="zoom-dialog" id="zoom-dialog">
+    <div class="zoom-box">
+      <img id="zoom-img" alt="Zoomed Cover Photo">
+      <button class="zoom-close-btn" id="zoom-close-btn" aria-label="Tutup"><span class="icon">close</span></button>
+    </div>
+  </div>
+
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.1"></script>
+  <script type="module" src="./app.js?v=4.2"></script>
 </body>
 </html>

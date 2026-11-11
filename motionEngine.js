@@ -262,6 +262,50 @@ export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDim
   return { blob, uint8Array, width: w, height: h, dataUrl };
 }
 
+/**
+ * Processes a user-uploaded image file to use as a custom cover for the Motion Photo.
+ * @param {File|Blob} imageFile
+ * @param {number} quality
+ * @param {number} maxDimension
+ * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string }>}
+ */
+export async function processCustomCoverImage(imageFile, quality = 0.92, maxDimension = MAX_DIM) {
+  const img = new Image();
+  const url = URL.createObjectURL(imageFile);
+  img.src = url;
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error("Gagal membaca file gambar kustom."));
+  });
+
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (Math.max(w, h) > maxDimension) {
+    const scale = maxDimension / Math.max(w, h);
+    w = Math.round(w * scale);
+    h = Math.round(h * scale);
+  }
+  w = w % 2 === 0 ? w : w - 1;
+  h = h % 2 === 0 ? h : h - 1;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  URL.revokeObjectURL(url);
+
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Gagal memproses gambar kustom."))), 'image/jpeg', quality);
+  });
+  const uint8Array = new Uint8Array(await blob.arrayBuffer());
+  canvas.width = canvas.height = 0;
+  return { blob, uint8Array, width: w, height: h, dataUrl };
+}
+
 /* ------------------------------------------------------------------ */
 /* Video encoding                                                      */
 /* ------------------------------------------------------------------ */

@@ -1,15 +1,19 @@
 /**
- * app.js — v4.1 Controller
+ * app.js — v4.2 Controller
  * Mobile-first Android Material 3 interface
- * Multi-language (8 languages) & 100% Client-side Motion Photo engine
+ * Multi-language (8 languages) & Cover Photo Studio (Frame-by-frame + Custom cover image)
  */
 
-import { translations, languageList } from './i18n.js?v=4.1';
+import { translations, languageList } from './i18n.js?v=4.2';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
+  processCustomCoverImage,
   trimVideoClip 
-} from './motionEngine.js?v=4.1';
+} from './motionEngine.js?v=4.2';
+
+const FPS = 30;
+const FRAME_STEP = 1 / FPS; // ~0.0333s
 
 // Global State
 let currentLang = localStorage.getItem('motion_lang') || (navigator.language.startsWith('id') ? 'id' : 'en');
@@ -20,6 +24,10 @@ let currentVideoUrl = null;
 let currentRotation = 0; // 0, 90, 180, 270
 let isConverting = false;
 let snackbarTimeout = null;
+
+// Custom Cover State
+let customCoverState = null; // { blob, uint8Array, width, height, dataUrl, active: true }
+let currentCoverDataUrl = '';
 
 // Converted Result State
 let generatedResult = {
@@ -64,13 +72,31 @@ const valStartTime = doc.getElementById('val-start-time');
 const valEndTime = doc.getElementById('val-end-time');
 const clipDurationBadge = doc.getElementById('clip-duration-badge');
 
+// Cover Studio Elements
 const sliderKeyframe = doc.getElementById('slider-keyframe');
 const keyframePosVal = doc.getElementById('keyframe-pos-val');
 const keyframeCanvas = doc.getElementById('keyframe-canvas');
+const coverStageBtn = doc.getElementById('cover-stage-btn');
+const coverSourceBadge = doc.getElementById('cover-source-badge');
+const labelCoverSource = doc.getElementById('label-cover-source');
+const btnStepPrev5 = doc.getElementById('btn-step-prev-5');
+const btnStepPrev1 = doc.getElementById('btn-step-prev-1');
+const btnStepNext1 = doc.getElementById('btn-step-next-1');
+const btnStepNext5 = doc.getElementById('btn-step-next-5');
 const btnKfStart = doc.getElementById('btn-kf-start');
 const btnKfMid = doc.getElementById('btn-kf-mid');
 const btnKfEnd = doc.getElementById('btn-kf-end');
 
+const uploadCustomCoverBtn = doc.getElementById('upload-custom-cover-btn');
+const customCoverInput = doc.getElementById('custom-cover-input');
+const resetCustomCoverBtn = doc.getElementById('reset-custom-cover-btn');
+
+// Zoom Dialog
+const zoomDialog = doc.getElementById('zoom-dialog');
+const zoomImg = doc.getElementById('zoom-img');
+const zoomCloseBtn = doc.getElementById('zoom-close-btn');
+
+// Conversion & Result Elements
 const convertBtn = doc.getElementById('convert-btn');
 const convertBtnText = doc.getElementById('convert-btn-text');
 const progressContainer = doc.getElementById('progress-container');
@@ -78,7 +104,6 @@ const progressStatusText = doc.getElementById('progress-status-text');
 const progressPercent = doc.getElementById('progress-percent');
 const progressBarFill = doc.getElementById('progress-bar-fill');
 
-// Result Sheet
 const sheetScrim = doc.getElementById('sheet-scrim');
 const resultCard = doc.getElementById('result-card');
 const sheetCloseBtn = doc.getElementById('sheet-close-btn');
@@ -120,7 +145,7 @@ function formatBytes(bytes) {
 }
 
 function formatSeconds(secs) {
-  return (parseFloat(secs) || 0).toFixed(1) + 's';
+  return (parseFloat(secs) || 0).toFixed(2) + 's';
 }
 
 function showSnackbar(msg, dur = 3200) {
@@ -229,9 +254,23 @@ function applyTranslations() {
   setTxt('label-slider-end', 'sliderEndLabel');
 
   setTxt('label-cover-title', 'coverPhotoTitle');
+  setTxt('label-zoom-hint', 'zoomHint');
+  setTxt('label-step-p5', 'stepPrev5');
+  setTxt('label-step-p1', 'stepPrev1');
+  setTxt('label-step-n1', 'stepNext1');
+  setTxt('label-step-n5', 'stepNext5');
   setTxt('btn-kf-start', 'btnKfStart');
   setTxt('btn-kf-mid', 'btnKfMid');
   setTxt('btn-kf-end', 'btnKfEnd');
+
+  setTxt('label-upload-cover', 'btnUploadCustomCover');
+  setTxt('label-reset-cover', 'btnResetVideoCover');
+
+  if (customCoverState && customCoverState.active) {
+    setTxt('label-cover-source', 'customCoverActive');
+  } else {
+    setTxt('label-cover-source', 'fromVideoFrame');
+  }
 
   setTxt('guide-summary', 'guideSummary');
   setHtml('guide-step-1', 'guideStep1');
@@ -269,6 +308,8 @@ function loadVideo(file) {
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = URL.createObjectURL(file);
   currentRotation = 0;
+  customCoverState = null;
+  resetCustomCoverUI();
 
   if (fileNameBadge) fileNameBadge.textContent = file.name;
   sourceVideo.src = currentVideoUrl;
@@ -323,7 +364,6 @@ function updateRotation() {
 
   if (sourceVideo && previewBox) {
     if (currentRotation === 90 || currentRotation === 270) {
-      // Calculate scale so rotated video fits within container bounds without clipping
       const pw = previewBox.clientWidth || 360;
       const ph = previewBox.clientHeight || 280;
       const scale = Math.min(pw / ph, ph / pw, 1);
@@ -333,8 +373,10 @@ function updateRotation() {
     }
   }
 
-  const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
-  renderKeyframePreview(kf);
+  if (!customCoverState || !customCoverState.active) {
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+    renderKeyframePreview(kf);
+  }
 }
 
 rotateVideoBtn?.addEventListener('click', (e) => {
@@ -368,7 +410,8 @@ function updateSliderUI() {
     sliderKeyframe.value = end.toFixed(2);
     kf = end;
   }
-  if (keyframePosVal) keyframePosVal.textContent = formatSeconds(kf);
+
+  updateKeyframeBadge(kf);
 
   updateSliderProgress(sliderStart);
   updateSliderProgress(sliderEnd);
@@ -379,6 +422,16 @@ function updateSliderUI() {
     const d = parseFloat(btn.getAttribute('data-dur'));
     btn.classList.toggle('active', Math.abs(duration - d) < 0.15);
   });
+}
+
+function updateKeyframeBadge(timeSec) {
+  if (!keyframePosVal) return;
+  if (customCoverState && customCoverState.active) {
+    keyframePosVal.textContent = t('customCoverActive');
+  } else {
+    const frameNum = Math.round(timeSec * FPS);
+    keyframePosVal.textContent = `${formatSeconds(timeSec)} · ${t('frameLabel')} #${frameNum}`;
+  }
 }
 
 // Duration Preset Chips (1.5s, 2s, 2.5s, 3s)
@@ -398,13 +451,21 @@ doc.querySelectorAll('.dur-preset-btn').forEach(btn => {
   });
 });
 
-// Render Still Frame to Canvas without Blanking
+// -------------------------------------------------------------
+// Cover Photo Studio (Enlarged + Frame Stepper + Custom Cover)
+// -------------------------------------------------------------
 function renderKeyframePreview(timeSec) {
+  if (customCoverState && customCoverState.active) {
+    drawCustomCoverToCanvas(customCoverState.dataUrl);
+    return;
+  }
+
   if (!sourceVideo || !keyframeCanvas || sourceVideo.readyState < 1) return;
 
-  extractCoverFrame(sourceVideo, timeSec, 0.85, 200, currentRotation)
+  extractCoverFrame(sourceVideo, timeSec, 0.88, 720, currentRotation)
     .then(({ dataUrl, width, height }) => {
       if (!dataUrl) return;
+      currentCoverDataUrl = dataUrl;
       keyframeCanvas.width = width;
       keyframeCanvas.height = height;
       const ctx = keyframeCanvas.getContext('2d');
@@ -420,42 +481,143 @@ function renderKeyframePreview(timeSec) {
     });
 }
 
+function drawCustomCoverToCanvas(dataUrl) {
+  if (!keyframeCanvas || !dataUrl) return;
+  currentCoverDataUrl = dataUrl;
+  const img = new Image();
+  img.onload = () => {
+    keyframeCanvas.width = img.width;
+    keyframeCanvas.height = img.height;
+    const ctx = keyframeCanvas.getContext('2d');
+    ctx.clearRect(0, 0, img.width, img.height);
+    ctx.drawImage(img, 0, 0);
+  };
+  img.src = dataUrl;
+}
+
+function resetCustomCoverUI() {
+  customCoverState = null;
+  coverSourceBadge?.classList.remove('custom');
+  if (labelCoverSource) labelCoverSource.textContent = t('fromVideoFrame');
+  resetCustomCoverBtn?.classList.add('hidden');
+  const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+  updateKeyframeBadge(kf);
+  renderKeyframePreview(kf);
+}
+
+// Frame Stepper Navigation (-5, -1, +1, +5)
+function stepKeyframe(deltaSeconds) {
+  if (customCoverState && customCoverState.active) {
+    // Revert to video frame on stepper action
+    resetCustomCoverUI();
+  }
+
+  const start = parseFloat(sliderStart.value || '0');
+  const end = parseFloat(sliderEnd.value || '2.5');
+  let cur = parseFloat(sliderKeyframe.value || '0');
+  let next = cur + deltaSeconds;
+
+  if (next < start) next = start;
+  if (next > end) next = end;
+
+  sliderKeyframe.value = next.toFixed(3);
+  updateKeyframeBadge(next);
+  updateSliderProgress(sliderKeyframe);
+  sourceVideo.currentTime = next;
+  renderKeyframePreview(next);
+}
+
+btnStepPrev5?.addEventListener('click', () => stepKeyframe(-5 * FRAME_STEP));
+btnStepPrev1?.addEventListener('click', () => stepKeyframe(-1 * FRAME_STEP));
+btnStepNext1?.addEventListener('click', () => stepKeyframe(1 * FRAME_STEP));
+btnStepNext5?.addEventListener('click', () => stepKeyframe(5 * FRAME_STEP));
+
 // Keyframe quick buttons
 btnKfStart?.addEventListener('click', () => {
+  if (customCoverState && customCoverState.active) resetCustomCoverUI();
   sliderKeyframe.value = sliderStart.value;
   sliderKeyframe.dispatchEvent(new Event('input'));
 });
 
 btnKfMid?.addEventListener('click', () => {
+  if (customCoverState && customCoverState.active) resetCustomCoverUI();
   const mid = (parseFloat(sliderStart.value) + parseFloat(sliderEnd.value)) / 2;
-  sliderKeyframe.value = mid.toFixed(2);
+  sliderKeyframe.value = mid.toFixed(3);
   sliderKeyframe.dispatchEvent(new Event('input'));
 });
 
 btnKfEnd?.addEventListener('click', () => {
+  if (customCoverState && customCoverState.active) resetCustomCoverUI();
   sliderKeyframe.value = sliderEnd.value;
   sliderKeyframe.dispatchEvent(new Event('input'));
 });
 
-// Slider Input Handlers
-sliderStart?.addEventListener('input', () => {
-  updateSliderUI();
-  sourceVideo.currentTime = parseFloat(sliderStart.value);
-});
-
-sliderEnd?.addEventListener('input', () => {
-  updateSliderUI();
-  sourceVideo.currentTime = parseFloat(sliderEnd.value);
-});
-
 sliderKeyframe?.addEventListener('input', () => {
+  if (customCoverState && customCoverState.active) {
+    resetCustomCoverUI();
+  }
   const time = parseFloat(sliderKeyframe.value);
-  if (keyframePosVal) keyframePosVal.textContent = formatSeconds(time);
+  updateKeyframeBadge(time);
   updateSliderProgress(sliderKeyframe);
   renderKeyframePreview(time);
+  sourceVideo.currentTime = time;
 });
 
+// Custom Cover Image Upload Handlers
+uploadCustomCoverBtn?.addEventListener('click', () => {
+  customCoverInput?.click();
+});
+
+customCoverInput?.addEventListener('change', async (e) => {
+  if (e.target.files && e.target.files[0]) {
+    try {
+      const file = e.target.files[0];
+      const processed = await processCustomCoverImage(file, 0.92, 1280);
+      customCoverState = {
+        ...processed,
+        active: true
+      };
+
+      coverSourceBadge?.classList.add('custom');
+      if (labelCoverSource) labelCoverSource.textContent = t('customCoverActive');
+      resetCustomCoverBtn?.classList.remove('hidden');
+
+      drawCustomCoverToCanvas(processed.dataUrl);
+      updateKeyframeBadge(parseFloat(sliderKeyframe.value));
+      showSnackbar(t('customCoverSuccess'));
+    } catch (err) {
+      console.error(err);
+      showSnackbar("Gagal memuat gambar: " + err.message);
+    }
+    customCoverInput.value = '';
+  }
+});
+
+resetCustomCoverBtn?.addEventListener('click', () => {
+  resetCustomCoverUI();
+});
+
+// Fullscreen Cover Zoom Dialog
+coverStageBtn?.addEventListener('click', () => {
+  if (!currentCoverDataUrl) return;
+  zoomImg.src = currentCoverDataUrl;
+  zoomDialog?.classList.add('open');
+});
+
+zoomCloseBtn?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  zoomDialog?.classList.remove('open');
+});
+
+zoomDialog?.addEventListener('click', (e) => {
+  if (e.target !== zoomImg) {
+    zoomDialog?.classList.remove('open');
+  }
+});
+
+// -------------------------------------------------------------
 // Play / Pause Video Controller
+// -------------------------------------------------------------
 function togglePlayPause() {
   if (!sourceVideo) return;
   if (sourceVideo.paused) {
@@ -587,9 +749,14 @@ convertBtn?.addEventListener('click', async () => {
   try {
     const targetMode = getSelectedMode();
 
-    // 1. Extract Cover Photo Frame (720p / 1280 max for mobile balance)
+    // 1. Prepare Cover Photo (Custom uploaded image OR extracted video frame)
     updateProgress(15, t('progressExtractCover'));
-    const coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation);
+    let coverResult;
+    if (customCoverState && customCoverState.active) {
+      coverResult = customCoverState;
+    } else {
+      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation);
+    }
 
     // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264)
     updateProgress(35, `${t('progressEncodeVideo')} (${duration.toFixed(1)}s)`);
