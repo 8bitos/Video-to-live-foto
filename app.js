@@ -1,10 +1,10 @@
 /**
- * app.js — v4.6 Controller
+ * app.js — v4.7 Controller
  * Mobile-first Android Material 3 interface
- * Multi-language (8 languages) & Cover Studio & Custom Ratio & Video Cropper & Cover Editor
+ * Multi-language (8 languages) & Resolution Config (720p/1080p) & Video Cropper & Privacy
  */
 
-import { translations, languageList } from './i18n.js?v=4.6';
+import { translations, languageList } from './i18n.js?v=4.7';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
@@ -12,7 +12,7 @@ import {
   trimVideoClip,
   computeOutputSize,
   drawRotated
-} from './motionEngine.js?v=4.6';
+} from './motionEngine.js?v=4.7';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -25,6 +25,11 @@ let currentVideoFile = null;
 let currentVideoUrl = null;
 let currentRotation = 0; // 0, 90, 180, 270
 let currentAspectRatio = 'original'; // 'original' | '9:16' | '1:1' | '4:5' | '16:9' | 'W:H'
+let currentResolution = 720; // 720 or 1080
+function getMaxDimension() {
+  return currentResolution === 1080 ? 1920 : 1280;
+}
+
 let isConverting = false;
 let snackbarTimeout = null;
 
@@ -96,6 +101,21 @@ const customRatioW = doc.getElementById('custom-ratio-w');
 const customRatioH = doc.getElementById('custom-ratio-h');
 const btnApplyCustomRatio = doc.getElementById('btn-apply-custom-ratio');
 const editVideoBtn = doc.getElementById('edit-video-btn');
+
+// Resolution Elements (720p / 1080p)
+const currentResBadge = doc.getElementById('current-res-badge');
+const cardRes720 = doc.getElementById('card-res-720');
+const cardRes1080 = doc.getElementById('card-res-1080');
+const resHint = doc.getElementById('res-hint');
+const heroResFeature = doc.getElementById('hero-res-feature');
+const feat1 = doc.getElementById('feat-1');
+
+// Privacy Modal Elements
+const privacyFeatureBtn = doc.getElementById('privacy-feature-btn');
+const privacyScrim = doc.getElementById('privacy-scrim');
+const privacySheet = doc.getElementById('privacy-sheet');
+const privacyCloseBtn = doc.getElementById('privacy-close-btn');
+const btnPrivacyGotit = doc.getElementById('btn-privacy-gotit');
 
 // Video Editor Modal Elements
 const videoEditorScrim = doc.getElementById('video-editor-scrim');
@@ -261,6 +281,35 @@ function updateModeUI() {
 }
 
 // -------------------------------------------------------------
+// Resolution & Privacy Management
+// -------------------------------------------------------------
+function updateResolutionUI() {
+  if (cardRes720) cardRes720.classList.toggle('active', currentResolution === 720);
+  if (cardRes1080) cardRes1080.classList.toggle('active', currentResolution === 1080);
+  if (currentResBadge) {
+    currentResBadge.textContent = currentResolution === 1080 ? t('res1080') : t('res720');
+  }
+  if (feat1) {
+    feat1.textContent = `${currentResolution}p · 30fps`;
+  }
+  if (resHint) {
+    resHint.textContent = t('resHint');
+  }
+}
+
+function openPrivacySheet() {
+  privacyScrim?.classList.add('open');
+  privacySheet?.classList.add('open');
+  privacySheet?.setAttribute('aria-hidden', 'false');
+}
+
+function closePrivacySheet() {
+  privacyScrim?.classList.remove('open');
+  privacySheet?.classList.remove('open');
+  privacySheet?.setAttribute('aria-hidden', 'true');
+}
+
+// -------------------------------------------------------------
 // Aspect Ratio & Cropping Management
 // -------------------------------------------------------------
 function updateRatioUI() {
@@ -325,7 +374,7 @@ function updateRatioUI() {
 
   // If custom cover is active, re-crop it to the new aspect ratio
   if (customCoverState && customCoverState.rawFile) {
-    processCustomCoverImage(customCoverState.rawFile, 0.92, 1280, currentAspectRatio)
+    processCustomCoverImage(customCoverState.rawFile, 0.92, getMaxDimension(), currentAspectRatio)
       .then((processed) => {
         customCoverState = { ...processed, active: true };
         drawCustomCoverToCanvas(processed.dataUrl);
@@ -490,7 +539,16 @@ function applyTranslations() {
   setTxt('share-btn-text', 'shareBtn');
   setTxt('reset-btn-text', 'editAgain');
 
+  // Resolution & Privacy Labels
+  setTxt('label-res-title', 'resolutionSectionTitle');
+  setTxt('label-res-720', 'res720');
+  setTxt('label-res-1080', 'res1080');
+  setTxt('label-privacy-title', 'privacyTitle');
+  setTxt('label-privacy-desc', 'privacyDesc');
+  setTxt('label-privacy-gotit', 'gotItBtn');
+
   updateModeUI();
+  updateResolutionUI();
   updateRatioUI();
   updateRotation();
 }
@@ -552,6 +610,7 @@ function loadVideo(file) {
 
     updateSliderUI();
     updateRatioUI();
+    updateResolutionUI();
     updateRotation();
 
     // Fix blank video screen on mobile: seek slightly above 0 to render initial frame
@@ -565,6 +624,7 @@ function loadVideo(file) {
     closeSheet();
     closeEditorSheet();
     closeVideoEditorSheet();
+    closePrivacySheet();
   };
 
   sourceVideo.addEventListener('loadeddata', () => {
@@ -801,7 +861,7 @@ customCoverInput?.addEventListener('change', async (e) => {
   if (e.target.files && e.target.files[0]) {
     try {
       const file = e.target.files[0];
-      const processed = await processCustomCoverImage(file, 0.92, 1280, currentAspectRatio);
+      const processed = await processCustomCoverImage(file, 0.92, getMaxDimension(), currentAspectRatio);
       customCoverState = {
         ...processed,
         active: true
@@ -877,7 +937,7 @@ function openEditorSheet() {
     img.src = currentCoverDataUrl;
   } else {
     const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value || '0') : 0;
-    extractCoverFrame(sourceVideo, kf, 0.92, 1280, currentRotation, currentAspectRatio, videoFraming)
+    extractCoverFrame(sourceVideo, kf, 0.92, getMaxDimension(), currentRotation, currentAspectRatio, videoFraming)
       .then(res => { img.src = res.dataUrl; })
       .catch(console.error);
   }
@@ -1211,7 +1271,6 @@ videoEditorApplyBtn?.addEventListener('click', () => {
   showSnackbar(t('videoFramingApplied'));
 });
 
-editVideoBtn?.addEventListener('click', openVideoEditorSheet);
 quickCropVideoBtn?.addEventListener('click', openVideoEditorSheet);
 videoEditorCloseBtn?.addEventListener('click', closeVideoEditorSheet);
 videoEditorScrim?.addEventListener('click', closeVideoEditorSheet);
@@ -1269,6 +1328,31 @@ sourceVideo?.addEventListener('ended', () => {
 doc.querySelectorAll('input[name="targetMode"]').forEach(radio => {
   radio.addEventListener('change', updateModeUI);
 });
+
+// Resolution Radios & Hero Feature Trigger
+doc.querySelectorAll('input[name="targetResolution"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    currentResolution = parseInt(radio.value, 10) || 720;
+    updateResolutionUI();
+    showSnackbar(currentResolution === 1080 ? "Resolusi disetel ke 1080p FHD" : "Resolusi disetel ke 720p HD");
+  });
+});
+
+heroResFeature?.addEventListener('click', () => {
+  currentResolution = currentResolution === 720 ? 1080 : 720;
+  const r720 = doc.querySelector('input[name="targetResolution"][value="720"]');
+  const r1080 = doc.querySelector('input[name="targetResolution"][value="1080"]');
+  if (currentResolution === 720 && r720) r720.checked = true;
+  if (currentResolution === 1080 && r1080) r1080.checked = true;
+  updateResolutionUI();
+  showSnackbar(currentResolution === 1080 ? "Resolusi disetel ke 1080p FHD" : "Resolusi disetel ke 720p HD");
+});
+
+// Privacy Modal Triggers
+privacyFeatureBtn?.addEventListener('click', openPrivacySheet);
+privacyCloseBtn?.addEventListener('click', closePrivacySheet);
+privacyScrim?.addEventListener('click', closePrivacySheet);
+btnPrivacyGotit?.addEventListener('click', closePrivacySheet);
 
 // File Chooser Triggers
 pickBtn?.addEventListener('click', () => videoFileInput?.click());
@@ -1362,7 +1446,7 @@ convertBtn?.addEventListener('click', async () => {
     if (customCoverState && customCoverState.active) {
       coverResult = customCoverState;
     } else {
-      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation, currentAspectRatio, videoFraming);
+      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, getMaxDimension(), currentRotation, currentAspectRatio, videoFraming);
     }
 
     // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264 with identical crop & framing)
@@ -1378,7 +1462,8 @@ convertBtn?.addEventListener('click', async () => {
         updateProgress(mapped, `${t('progressEncodingFrames')} (${Math.round(p)}%)...`);
       },
       currentAspectRatio,
-      videoFraming
+      videoFraming,
+      getMaxDimension()
     );
 
     // 3. Inject Metadata
@@ -1440,7 +1525,7 @@ convertBtn?.addEventListener('click', async () => {
       progressContainer?.classList.add('hidden');
 
       if (resTotalSize) {
-        resTotalSize.textContent = `${formatBytes(generatedResult.totalSize)} • ${duration.toFixed(1)}s • 30fps`;
+        resTotalSize.textContent = `${formatBytes(generatedResult.totalSize)} • ${duration.toFixed(1)}s • ${currentResolution}p @ 30fps`;
       }
 
       if (simStillImg) {

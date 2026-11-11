@@ -145,6 +145,19 @@
     .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
     .feature { background: var(--surface-1); border-radius: 20px; padding: 14px 6px; text-align: center; font-size: 12px; color: var(--on-surface-variant); }
     .feature .icon { color: var(--primary); display: block; margin: 0 auto 6px; }
+    .feature-interactive { cursor: pointer; transition: transform .15s, background .15s; }
+    .feature-interactive:active { transform: scale(0.96); background: var(--secondary-container); }
+    .privacy-sheet { max-height: 85dvh; }
+    .privacy-callout {
+      background: var(--surface-2); border-radius: 18px; padding: 14px 16px;
+      display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px;
+      border: 1px solid var(--outline);
+    }
+    .privacy-callout .icon { color: var(--primary); font-size: 24px; flex-shrink: 0; }
+    .privacy-callout p { font-size: 13px; line-height: 1.5; color: var(--on-surface); margin: 0; }
+    .privacy-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; font-size: 13px; color: var(--on-surface-variant); }
+    .privacy-list li { display: flex; align-items: flex-start; gap: 8px; line-height: 1.45; }
+    .privacy-list li .icon { font-size: 18px; color: var(--success); flex-shrink: 0; margin-top: 1px; }
 
     /* ---------- Editor Preview ---------- */
     .preview {
@@ -498,8 +511,8 @@
         <input type="file" id="video-file-input" accept="video/*" hidden>
       </div>
       <div class="features">
-        <div class="feature"><span class="icon">hd</span><span id="feat-1">720p · 30fps</span></div>
-        <div class="feature"><span class="icon">bolt</span><span id="feat-2">Tanpa upload</span></div>
+        <div class="feature feature-interactive" id="hero-res-feature" title="Atur Resolusi Video"><span class="icon">hd</span><span id="feat-1">720p · 30fps</span></div>
+        <div class="feature feature-interactive" id="privacy-feature-btn" title="Privasi 100% Aman &amp; Lokal"><span class="icon">lock</span><span id="feat-2">100% Lokal</span></div>
         <div class="feature"><span class="icon">smartphone</span><span id="feat-3">Galeri &amp; TikTok</span></div>
       </div>
     </section>
@@ -564,14 +577,6 @@
           </div>
         </div>
 
-        <!-- Video Crop Action Button -->
-        <div class="video-crop-actions" style="margin-top: 10px;">
-          <button type="button" class="custom-action-btn" id="edit-video-btn">
-            <span class="icon">crop</span>
-            <span id="label-edit-video">Edit &amp; Crop Video (Zoom &amp; Posisi)</span>
-          </button>
-        </div>
-
         <p class="seg-hint" id="ratio-hint"></p>
       </div>
 
@@ -588,6 +593,25 @@
           </label>
         </div>
         <p class="seg-hint" id="mode-hint"></p>
+      </div>
+
+      <!-- Resolution Control (720p / 1080p) -->
+      <div class="section">
+        <div class="section-title">
+          <span id="label-res-title">Resolusi video</span>
+          <span class="value" id="current-res-badge">720p HD</span>
+        </div>
+        <div class="segmented res-segmented">
+          <label id="card-res-720" class="active">
+            <input type="radio" name="targetResolution" value="720" checked>
+            <span class="icon">hd</span><span id="label-res-720">720p HD</span>
+          </label>
+          <label id="card-res-1080">
+            <input type="radio" name="targetResolution" value="1080">
+            <span class="icon">high_density</span><span id="label-res-1080">1080p FHD</span>
+          </label>
+        </div>
+        <p class="seg-hint" id="res-hint"></p>
       </div>
 
       <div class="section">
@@ -871,8 +895,40 @@
     </div>
   </div>
 
+  <!-- Privacy Info Bottom Sheet -->
+  <div class="scrim" id="privacy-scrim"></div>
+  <section class="sheet privacy-sheet" id="privacy-sheet" aria-hidden="true">
+    <div class="handle"></div>
+    <div class="sheet-head">
+      <div class="badge" style="background: rgba(33, 150, 243, .18); color: #2196f3;">
+        <span class="icon">security</span>
+      </div>
+      <div class="titles">
+        <h3 id="label-privacy-title">Privasi 100% Aman &amp; Lokal</h3>
+        <p id="label-privacy-sub">Client-Side · Tanpa Server · Tanpa Database</p>
+      </div>
+      <button class="icon-btn" id="privacy-close-btn" aria-label="Tutup"><span class="icon">close</span></button>
+    </div>
+    <div class="privacy-content">
+      <div class="privacy-callout">
+        <span class="icon">verified_user</span>
+        <p id="label-privacy-desc">Semua pemrosesan video dan foto berjalan 100% langsung di browser perangkat Anda (client-side). Tidak ada file atau data yang diunggah ke server, dan tidak ada database. Privasi Anda 100% aman dan data tidak pernah meninggalkan HP Anda.</p>
+      </div>
+      <ul class="privacy-list">
+        <li><span class="icon">check_circle</span> <b>100% Di RAM Browser:</b> File Anda hanya dibaca di memori lokal saat halaman dibuka.</li>
+        <li><span class="icon">check_circle</span> <b>Nol Database &amp; Nol Server:</b> Tidak ada backend penyimpan video, foto, atau identitas Anda.</li>
+        <li><span class="icon">check_circle</span> <b>Aman Offline:</b> Konversi tetap bisa berjalan tanpa internet setelah halaman terbuka.</li>
+      </ul>
+    </div>
+    <div class="sheet-actions" style="margin-top: 16px;">
+      <button class="btn btn-filled w-full" id="btn-privacy-gotit">
+        <span class="icon">check</span><span id="label-privacy-gotit">Mengerti</span>
+      </button>
+    </div>
+  </section>
+
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.6"></script>
+  <script type="module" src="./app.js?v=4.7"></script>
 </body>
 </html>

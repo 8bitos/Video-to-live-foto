@@ -437,9 +437,10 @@ function withTimeout(promise, ms, message) {
 
 async function pickEncoderConfig(w, h) {
   // Baseline / Main / High at levels that comfortably fit 720p–1080p
+  const bitrate = Math.max(w, h) > 1300 ? 8_000_000 : 5_000_000;
   const codecs = ['avc1.42002a', 'avc1.420028', 'avc1.4d0028', 'avc1.640028', 'avc1.42001f'];
   for (const codec of codecs) {
-    const config = { codec, width: w, height: h, bitrate: 5_000_000, framerate: FPS, avc: { format: 'avc' } };
+    const config = { codec, width: w, height: h, bitrate, framerate: FPS, avc: { format: 'avc' } };
     try {
       const support = await VideoEncoder.isConfigSupported(config);
       if (support && support.supported) return config;
@@ -593,7 +594,8 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
   drawRotated(ctx, video, rotation, w, h, cropInfo);
 
   const stream = canvas.captureStream(FPS);
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
+  const bitrate = Math.max(w, h) > 1300 ? 8_000_000 : 5_000_000;
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrate });
   const chunks = [];
   recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
   const stoppedPromise = new Promise((resolve) => { recorder.onstop = resolve; });
@@ -632,8 +634,8 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
 }
 
 /**
- * Cuts [startTime, endTime] from the video into an upright, 30fps, ≤720p H.264 MP4,
- * cropped cleanly according to `aspectRatio`.
+ * Cuts [startTime, endTime] from the video into an upright, 30fps, ≤1080p H.264 MP4,
+ * cropped cleanly according to `aspectRatio` and `framing`.
  * @param {HTMLVideoElement} video
  * @param {number} startTime
  * @param {number} endTime
@@ -641,14 +643,16 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
  * @param {number} rotation
  * @param {(p:number)=>void} onProgress
  * @param {string} aspectRatio 'original' | '9:16' | '1:1' | '4:5' | '16:9'
+ * @param {object|null} framing
+ * @param {number} maxDim Max dimension (1280 for 720p, 1920 for 1080p)
  * @returns {Promise<Uint8Array>}
  */
-export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}, aspectRatio = 'original', framing = null) {
+export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}, aspectRatio = 'original', framing = null, maxDim = MAX_DIM) {
   video.pause();
   video.muted = true;
   video.playsInline = true;
 
-  const cropInfo = computeOutputSize(video, rotation, aspectRatio, MAX_DIM, framing);
+  const cropInfo = computeOutputSize(video, rotation, aspectRatio, maxDim, framing);
   const { w, h } = cropInfo;
 
   if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && Mp4Muxer) {
