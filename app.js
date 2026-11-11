@@ -1,16 +1,16 @@
 /**
- * app.js — v4.2 Controller
+ * app.js — v4.3 Controller
  * Mobile-first Android Material 3 interface
- * Multi-language (8 languages) & Cover Photo Studio (Frame-by-frame + Custom cover image)
+ * Multi-language (8 languages) & Cover Studio & Aspect Ratio / Cropping
  */
 
-import { translations, languageList } from './i18n.js?v=4.2';
+import { translations, languageList } from './i18n.js?v=4.3';
 import { 
   createGoogleMotionPhoto, 
   extractCoverFrame, 
   processCustomCoverImage,
   trimVideoClip 
-} from './motionEngine.js?v=4.2';
+} from './motionEngine.js?v=4.3';
 
 const FPS = 30;
 const FRAME_STEP = 1 / FPS; // ~0.0333s
@@ -22,11 +22,12 @@ if (!translations[currentLang]) currentLang = 'en';
 let currentVideoFile = null;
 let currentVideoUrl = null;
 let currentRotation = 0; // 0, 90, 180, 270
+let currentAspectRatio = 'original'; // 'original' | '9:16' | '1:1' | '4:5' | '16:9'
 let isConverting = false;
 let snackbarTimeout = null;
 
 // Custom Cover State
-let customCoverState = null; // { blob, uint8Array, width, height, dataUrl, active: true }
+let customCoverState = null; // { blob, uint8Array, width, height, dataUrl, rawFile, active: true }
 let currentCoverDataUrl = '';
 
 // Converted Result State
@@ -49,6 +50,7 @@ const dropzone = doc.getElementById('dropzone');
 const trimmerPanel = doc.getElementById('trimmer-panel');
 const actionBar = doc.getElementById('action-bar');
 const previewBox = doc.getElementById('preview-box');
+const previewViewport = doc.getElementById('preview-viewport');
 const sourceVideo = doc.getElementById('source-video');
 const rotateVideoBtn = doc.getElementById('rotate-video-btn');
 const rotateBtnText = doc.getElementById('rotate-btn-text');
@@ -59,6 +61,10 @@ const currentTimecode = doc.getElementById('current-timecode');
 const totalTimecode = doc.getElementById('total-timecode');
 const fileNameBadge = doc.getElementById('file-name-badge');
 const changeVideoBtn = doc.getElementById('change-video-btn');
+
+// Aspect Ratio Elements
+const currentRatioBadge = doc.getElementById('current-ratio-badge');
+const ratioHint = doc.getElementById('ratio-hint');
 
 // Mode Selection
 const cardModeAndroid = doc.getElementById('card-mode-android');
@@ -145,7 +151,7 @@ function formatBytes(bytes) {
 }
 
 function formatSeconds(secs) {
-  return (parseFloat(secs) || 0).toFixed(2) + 's';
+  return (parseFloat(secs) || 0).toFixed(1) + 's';
 }
 
 function showSnackbar(msg, dur = 3200) {
@@ -185,6 +191,72 @@ function updateModeUI() {
     if (convertBtnText) convertBtnText.textContent = t('convertBtnTiktok');
   }
 }
+
+// -------------------------------------------------------------
+// Aspect Ratio & Cropping Management
+// -------------------------------------------------------------
+function updateRatioUI() {
+  doc.querySelectorAll('.ratio-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-ratio') === currentAspectRatio);
+  });
+
+  if (currentRatioBadge) {
+    const badgeKey = currentAspectRatio === 'original' ? 'ratioOriginal'
+      : currentAspectRatio === '9:16' ? 'ratioTikTok'
+      : currentAspectRatio === '1:1' ? 'ratioSquare'
+      : currentAspectRatio === '4:5' ? 'ratioPortrait' : 'ratioLandscape';
+    currentRatioBadge.textContent = t(badgeKey);
+  }
+  if (ratioHint) ratioHint.textContent = t('ratioHint');
+
+  if (previewViewport && previewBox) {
+    if (currentAspectRatio === 'original') {
+      previewViewport.style.aspectRatio = '';
+      previewViewport.style.width = '100%';
+      previewViewport.style.height = '100%';
+      previewBox.classList.remove('cropped-mode');
+    } else {
+      previewBox.classList.add('cropped-mode');
+      if (currentAspectRatio === '9:16') {
+        previewViewport.style.aspectRatio = '9 / 16';
+        previewViewport.style.width = 'auto';
+        previewViewport.style.height = '100%';
+      } else if (currentAspectRatio === '1:1') {
+        previewViewport.style.aspectRatio = '1 / 1';
+        previewViewport.style.width = 'auto';
+        previewViewport.style.height = 'min(100%, 360px)';
+      } else if (currentAspectRatio === '4:5') {
+        previewViewport.style.aspectRatio = '4 / 5';
+        previewViewport.style.width = 'auto';
+        previewViewport.style.height = '100%';
+      } else if (currentAspectRatio === '16:9') {
+        previewViewport.style.aspectRatio = '16 / 9';
+        previewViewport.style.width = '100%';
+        previewViewport.style.height = 'auto';
+      }
+    }
+  }
+
+  // If custom cover is active, re-crop it to the new aspect ratio
+  if (customCoverState && customCoverState.rawFile) {
+    processCustomCoverImage(customCoverState.rawFile, 0.92, 1280, currentAspectRatio)
+      .then((processed) => {
+        customCoverState = { ...processed, active: true };
+        drawCustomCoverToCanvas(processed.dataUrl);
+      })
+      .catch(console.error);
+  } else {
+    const kf = sliderKeyframe ? parseFloat(sliderKeyframe.value) : 0;
+    renderKeyframePreview(kf);
+  }
+}
+
+doc.querySelectorAll('.ratio-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentAspectRatio = btn.getAttribute('data-ratio');
+    updateRatioUI();
+  });
+});
 
 // -------------------------------------------------------------
 // Internationalization (i18n) Setup
@@ -249,6 +321,13 @@ function applyTranslations() {
   setTxt('label-mode-android', 'modeLivePhoto');
   setTxt('label-mode-tiktok', 'modeVideo');
 
+  setTxt('label-ratio-title', 'ratioSectionTitle');
+  setTxt('label-ratio-orig', 'ratioOriginal');
+  setTxt('label-ratio-916', 'ratioTikTok');
+  setTxt('label-ratio-11', 'ratioSquare');
+  setTxt('label-ratio-45', 'ratioPortrait');
+  setTxt('label-ratio-169', 'ratioLandscape');
+
   setTxt('label-duration-title', 'clipDurationTitle');
   setTxt('label-slider-start', 'sliderStartLabel');
   setTxt('label-slider-end', 'sliderEndLabel');
@@ -284,6 +363,7 @@ function applyTranslations() {
   setTxt('reset-btn-text', 'editAgain');
 
   updateModeUI();
+  updateRatioUI();
   updateRotation();
 }
 
@@ -308,6 +388,7 @@ function loadVideo(file) {
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = URL.createObjectURL(file);
   currentRotation = 0;
+  currentAspectRatio = 'original';
   customCoverState = null;
   resetCustomCoverUI();
 
@@ -334,6 +415,7 @@ function loadVideo(file) {
     sliderKeyframe.value = "0";
 
     updateSliderUI();
+    updateRatioUI();
     updateRotation();
 
     // Fix blank video screen on mobile: seek slightly above 0 to render initial frame
@@ -462,7 +544,7 @@ function renderKeyframePreview(timeSec) {
 
   if (!sourceVideo || !keyframeCanvas || sourceVideo.readyState < 1) return;
 
-  extractCoverFrame(sourceVideo, timeSec, 0.88, 720, currentRotation)
+  extractCoverFrame(sourceVideo, timeSec, 0.88, 720, currentRotation, currentAspectRatio)
     .then(({ dataUrl, width, height }) => {
       if (!dataUrl) return;
       currentCoverDataUrl = dataUrl;
@@ -508,7 +590,6 @@ function resetCustomCoverUI() {
 // Frame Stepper Navigation (-5, -1, +1, +5)
 function stepKeyframe(deltaSeconds) {
   if (customCoverState && customCoverState.active) {
-    // Revert to video frame on stepper action
     resetCustomCoverUI();
   }
 
@@ -572,7 +653,7 @@ customCoverInput?.addEventListener('change', async (e) => {
   if (e.target.files && e.target.files[0]) {
     try {
       const file = e.target.files[0];
-      const processed = await processCustomCoverImage(file, 0.92, 1280);
+      const processed = await processCustomCoverImage(file, 0.92, 1280, currentAspectRatio);
       customCoverState = {
         ...processed,
         active: true
@@ -749,16 +830,16 @@ convertBtn?.addEventListener('click', async () => {
   try {
     const targetMode = getSelectedMode();
 
-    // 1. Prepare Cover Photo (Custom uploaded image OR extracted video frame)
+    // 1. Prepare Cover Photo (Custom uploaded image OR extracted video frame with aspect ratio crop)
     updateProgress(15, t('progressExtractCover'));
     let coverResult;
     if (customCoverState && customCoverState.active) {
       coverResult = customCoverState;
     } else {
-      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation);
+      coverResult = await extractCoverFrame(sourceVideo, keyframeTime, 0.90, 1280, currentRotation, currentAspectRatio);
     }
 
-    // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264)
+    // 2. Prepare & Trim Video Segment (Smooth 30fps FastStart H.264 with identical crop)
     updateProgress(35, `${t('progressEncodeVideo')} (${duration.toFixed(1)}s)`);
     const videoClipBytes = await trimVideoClip(
       sourceVideo,
@@ -769,7 +850,8 @@ convertBtn?.addEventListener('click', async () => {
       (p) => {
         const mapped = 35 + Math.round(p * 0.50);
         updateProgress(mapped, `${t('progressEncodingFrames')} (${Math.round(p)}%)...`);
-      }
+      },
+      currentAspectRatio
     );
 
     // 3. Inject Metadata

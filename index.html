@@ -151,10 +151,21 @@
       height: min(48vh, 420px); min-height: 240px; margin-top: 8px;
       display: flex; align-items: center; justify-content: center;
     }
+    .preview-viewport {
+      position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; border-radius: 20px; transition: all .25s ease;
+    }
     .preview video {
       width: 100%; height: 100%; object-fit: contain; display: block;
       transform-origin: center center; transition: transform .25s ease;
       background: #000;
+    }
+    .preview.cropped-mode .preview-viewport {
+      border: 2px solid var(--primary);
+      box-shadow: 0 0 16px rgba(0, 97, 164, .35);
+    }
+    .preview.cropped-mode video {
+      object-fit: cover;
     }
     .overlay-chip {
       position: absolute; background: rgba(0, 0, 0, .6); color: #fff;
@@ -211,6 +222,14 @@
       transition: background .2s, border-color .2s;
     }
     .chip.active { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
+    .ratio-chips {
+      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+      scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .ratio-chips::-webkit-scrollbar { display: none; }
+    .ratio-chips .chip {
+      flex: 0 0 auto; padding: 0 16px; font-size: 13px; white-space: nowrap;
+    }
 
     /* Sliders (M3 expressive style) */
     .slider-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
@@ -451,7 +470,9 @@
     <!-- Editor -->
     <section id="trimmer-panel" class="hidden">
       <div class="preview" id="preview-box">
-        <video id="source-video" playsinline muted preload="auto"></video>
+        <div class="preview-viewport" id="preview-viewport">
+          <video id="source-video" playsinline muted preload="auto"></video>
+        </div>
         <span class="overlay-chip name" id="file-name-badge">video.mp4</span>
         <button class="close" id="change-video-btn" aria-label="Ganti video"><span class="icon">close</span></button>
         <button class="play" id="play-pause-btn" aria-label="Putar"><span class="icon fill" id="play-icon">play_arrow</span></button>
@@ -459,6 +480,32 @@
         <button class="rotate" id="rotate-video-btn" aria-label="Putar video">
           <span class="icon">rotate_right</span><span id="rotate-btn-text">0°</span>
         </button>
+      </div>
+
+      <!-- Aspect Ratio & Crop Control -->
+      <div class="section">
+        <div class="section-title">
+          <span id="label-ratio-title">Rasio &amp; Crop</span>
+          <span class="value" id="current-ratio-badge">Asli</span>
+        </div>
+        <div class="chips ratio-chips">
+          <button type="button" class="chip ratio-btn active" data-ratio="original">
+            <span id="label-ratio-orig">Asli</span>
+          </button>
+          <button type="button" class="chip ratio-btn" data-ratio="9:16">
+            <span id="label-ratio-916">9:16 TikTok</span>
+          </button>
+          <button type="button" class="chip ratio-btn" data-ratio="1:1">
+            <span id="label-ratio-11">1:1 Persegi</span>
+          </button>
+          <button type="button" class="chip ratio-btn" data-ratio="4:5">
+            <span id="label-ratio-45">4:5 Feed</span>
+          </button>
+          <button type="button" class="chip ratio-btn" data-ratio="16:9">
+            <span id="label-ratio-169">16:9 Lanskap</span>
+          </button>
+        </div>
+        <p class="seg-hint" id="ratio-hint"></p>
       </div>
 
       <div class="section">
@@ -631,6 +678,6 @@
 
   <div class="snackbar" id="snackbar" role="status"></div>
 
-  <script type="module" src="./app.js?v=4.2"></script>
+  <script type="module" src="./app.js?v=4.3"></script>
 </body>
 </html>

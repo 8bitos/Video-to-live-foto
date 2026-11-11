@@ -195,63 +195,134 @@ export function waitSeek(video, time, timeoutMs = 1500) {
 }
 
 /**
- * Output size after rotation, capped to `maxDim` and rounded to even numbers (H.264).
+ * Output size and crop rectangle after rotation and aspect ratio cropping.
  * @param {HTMLVideoElement} video
  * @param {number} rotation
+ * @param {string} aspectRatio 'original' | '9:16' | '1:1' | '4:5' | '16:9'
  * @param {number} maxDim
  */
-export function computeOutputSize(video, rotation, maxDim = MAX_DIM) {
+export function computeOutputSize(video, rotation, aspectRatio = 'original', maxDim = MAX_DIM) {
   const srcW = video.videoWidth || 1280;
   const srcH = video.videoHeight || 720;
   const rot90 = rotation === 90 || rotation === 270;
-  let w = rot90 ? srcH : srcW;
-  let h = rot90 ? srcW : srcH;
-  const scale = Math.min(1, maxDim / Math.max(w, h));
-  w = Math.max(2, Math.round((w * scale) / 2) * 2);
-  h = Math.max(2, Math.round((h * scale) / 2) * 2);
-  return { w, h };
+  const uprightW = rot90 ? srcH : srcW;
+  const uprightH = rot90 ? srcW : srcH;
+
+  let targetAspect = uprightW / uprightH;
+  if (aspectRatio === '9:16') targetAspect = 9 / 16;
+  else if (aspectRatio === '1:1') targetAspect = 1.0;
+  else if (aspectRatio === '4:5') targetAspect = 4 / 5;
+  else if (aspectRatio === '16:9') targetAspect = 16 / 9;
+
+  let cropW, cropH, cropX, cropY;
+  const srcAspect = uprightW / uprightH;
+
+  if (Math.abs(srcAspect - targetAspect) < 0.005) {
+    cropW = uprightW;
+    cropH = uprightH;
+    cropX = 0;
+    cropY = 0;
+  } else if (srcAspect > targetAspect) {
+    // Video is wider than target aspect ratio -> crop left & right
+    cropH = uprightH;
+    cropW = uprightH * targetAspect;
+    cropX = (uprightW - cropW) / 2;
+    cropY = 0;
+  } else {
+    // Video is taller than target aspect ratio -> crop top & bottom
+    cropW = uprightW;
+    cropH = uprightW / targetAspect;
+    cropX = 0;
+    cropY = (uprightH - cropH) / 2;
+  }
+
+  let outW = cropW;
+  let outH = cropH;
+  if (Math.max(outW, outH) > maxDim) {
+    const scale = maxDim / Math.max(outW, outH);
+    outW = Math.round(outW * scale);
+    outH = Math.round(outH * scale);
+  }
+  // Enforce even dimensions for H.264
+  outW = Math.max(2, Math.round(outW / 2) * 2);
+  outH = Math.max(2, Math.round(outH / 2) * 2);
+
+  return {
+    w: outW,
+    h: outH,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+    uprightW,
+    uprightH
+  };
 }
 
 /**
- * Draws the current video frame into a w×h canvas context, rotated upright.
+ * Draws the current video frame into a w×h canvas context, rotated upright and cropped to ratio.
  * @param {CanvasRenderingContext2D} ctx
  * @param {HTMLVideoElement} video
  * @param {number} rotation
  * @param {number} w
  * @param {number} h
+ * @param {object|null} cropInfo
  */
-export function drawRotated(ctx, video, rotation, w, h) {
-  const rot90 = rotation === 90 || rotation === 270;
+export function drawRotated(ctx, video, rotation, w, h, cropInfo = null) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (rotation === 90) {
-    ctx.translate(w, 0);
-    ctx.rotate(Math.PI / 2);
-  } else if (rotation === 180) {
-    ctx.translate(w, h);
-    ctx.rotate(Math.PI);
-  } else if (rotation === 270) {
-    ctx.translate(0, h);
-    ctx.rotate(-Math.PI / 2);
+
+  if (cropInfo && cropInfo.cropW) {
+    const { cropX, cropY, cropW, uprightW, uprightH } = cropInfo;
+    const scale = w / cropW;
+    ctx.translate(-cropX * scale, -cropY * scale);
+    ctx.scale(scale, scale);
+
+    if (rotation === 90) {
+      ctx.translate(uprightW, 0);
+      ctx.rotate(Math.PI / 2);
+    } else if (rotation === 180) {
+      ctx.translate(uprightW, uprightH);
+      ctx.rotate(Math.PI);
+    } else if (rotation === 270) {
+      ctx.translate(0, uprightH);
+      ctx.rotate(-Math.PI / 2);
+    }
+    const rawW = (rotation === 90 || rotation === 270) ? uprightH : uprightW;
+    const rawH = (rotation === 90 || rotation === 270) ? uprightW : uprightH;
+    ctx.drawImage(video, 0, 0, rawW, rawH);
+  } else {
+    const rot90 = rotation === 90 || rotation === 270;
+    if (rotation === 90) {
+      ctx.translate(w, 0);
+      ctx.rotate(Math.PI / 2);
+    } else if (rotation === 180) {
+      ctx.translate(w, h);
+      ctx.rotate(Math.PI);
+    } else if (rotation === 270) {
+      ctx.translate(0, h);
+      ctx.rotate(-Math.PI / 2);
+    }
+    ctx.drawImage(video, 0, 0, rot90 ? h : w, rot90 ? w : h);
   }
-  ctx.drawImage(video, 0, 0, rot90 ? h : w, rot90 ? w : h);
   ctx.restore();
 }
 
 /**
- * Extracts an upright still JPEG from the video at `timestamp`.
- * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number }>}
+ * Extracts an upright still JPEG from the video at `timestamp`, cropped to `aspectRatio`.
+ * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string }>}
  */
-export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDimension = MAX_DIM, rotation = 0) {
+export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDimension = MAX_DIM, rotation = 0, aspectRatio = 'original') {
   video.pause();
   await waitSeek(video, timestamp);
 
-  const { w, h } = computeOutputSize(video, rotation, maxDimension);
+  const cropInfo = computeOutputSize(video, rotation, aspectRatio, maxDimension);
+  const { w, h } = cropInfo;
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d', { alpha: false });
-  drawRotated(ctx, video, rotation, w, h);
+  drawRotated(ctx, video, rotation, w, h, cropInfo);
 
   const dataUrl = canvas.toDataURL('image/jpeg', quality);
   const blob = await new Promise((resolve, reject) => {
@@ -263,13 +334,15 @@ export async function extractCoverFrame(video, timestamp, quality = 0.92, maxDim
 }
 
 /**
- * Processes a user-uploaded image file to use as a custom cover for the Motion Photo.
+ * Processes a user-uploaded image file to use as a custom cover for the Motion Photo,
+ * cropped cleanly to the specified `aspectRatio`.
  * @param {File|Blob} imageFile
  * @param {number} quality
  * @param {number} maxDimension
- * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string }>}
+ * @param {string} aspectRatio
+ * @returns {Promise<{ blob: Blob, uint8Array: Uint8Array, width: number, height: number, dataUrl: string, rawFile: File|Blob }>}
  */
-export async function processCustomCoverImage(imageFile, quality = 0.92, maxDimension = MAX_DIM) {
+export async function processCustomCoverImage(imageFile, quality = 0.92, maxDimension = MAX_DIM, aspectRatio = 'original') {
   const img = new Image();
   const url = URL.createObjectURL(imageFile);
   img.src = url;
@@ -278,23 +351,51 @@ export async function processCustomCoverImage(imageFile, quality = 0.92, maxDime
     img.onerror = () => reject(new Error("Gagal membaca file gambar kustom."));
   });
 
-  let w = img.naturalWidth || img.width;
-  let h = img.naturalHeight || img.height;
-  if (Math.max(w, h) > maxDimension) {
-    const scale = maxDimension / Math.max(w, h);
-    w = Math.round(w * scale);
-    h = Math.round(h * scale);
+  const rawW = img.naturalWidth || img.width;
+  const rawH = img.naturalHeight || img.height;
+
+  let targetAspect = rawW / rawH;
+  if (aspectRatio === '9:16') targetAspect = 9 / 16;
+  else if (aspectRatio === '1:1') targetAspect = 1.0;
+  else if (aspectRatio === '4:5') targetAspect = 4 / 5;
+  else if (aspectRatio === '16:9') targetAspect = 16 / 9;
+
+  let cropW, cropH, cropX, cropY;
+  const srcAspect = rawW / rawH;
+  if (Math.abs(srcAspect - targetAspect) < 0.005) {
+    cropW = rawW;
+    cropH = rawH;
+    cropX = 0;
+    cropY = 0;
+  } else if (srcAspect > targetAspect) {
+    cropH = rawH;
+    cropW = rawH * targetAspect;
+    cropX = (rawW - cropW) / 2;
+    cropY = 0;
+  } else {
+    cropW = rawW;
+    cropH = rawW / targetAspect;
+    cropX = 0;
+    cropY = (rawH - cropH) / 2;
   }
-  w = w % 2 === 0 ? w : w - 1;
-  h = h % 2 === 0 ? h : h - 1;
+
+  let outW = cropW;
+  let outH = cropH;
+  if (Math.max(outW, outH) > maxDimension) {
+    const scale = maxDimension / Math.max(outW, outH);
+    outW = Math.round(outW * scale);
+    outH = Math.round(outH * scale);
+  }
+  outW = Math.max(2, Math.round(outW / 2) * 2);
+  outH = Math.max(2, Math.round(outH / 2) * 2);
 
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext('2d', { alpha: false });
   ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(img, 0, 0, w, h);
+  ctx.fillRect(0, 0, outW, outH);
+  ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
   URL.revokeObjectURL(url);
 
   const dataUrl = canvas.toDataURL('image/jpeg', quality);
@@ -303,7 +404,7 @@ export async function processCustomCoverImage(imageFile, quality = 0.92, maxDime
   });
   const uint8Array = new Uint8Array(await blob.arrayBuffer());
   canvas.width = canvas.height = 0;
-  return { blob, uint8Array, width: w, height: h, dataUrl };
+  return { blob, uint8Array, width: outW, height: outH, dataUrl, rawFile: imageFile };
 }
 
 /* ------------------------------------------------------------------ */
@@ -331,7 +432,7 @@ async function pickEncoderConfig(w, h) {
   return null;
 }
 
-async function encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress) {
+async function encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress, cropInfo = null) {
   const duration = endTime - startTime;
   let finalized = false;
   let encoderError = null;
@@ -357,7 +458,7 @@ async function encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, co
   const ctx = canvas.getContext('2d', { alpha: false });
 
   const encodeAt = (tUs) => {
-    drawRotated(ctx, video, rotation, w, h);
+    drawRotated(ctx, video, rotation, w, h, cropInfo);
     const frame = new VideoFrame(canvas, { timestamp: tUs, duration: FRAME_US });
     try {
       encoder.encode(frame, { keyFrame: frames % 15 === 0 });
@@ -457,7 +558,7 @@ async function encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, co
   }
 }
 
-async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress) {
+async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress, cropInfo = null) {
   const types = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
   const mimeType = typeof MediaRecorder !== 'undefined'
     ? types.find((t) => MediaRecorder.isTypeSupported(t))
@@ -473,7 +574,7 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
   const ctx = canvas.getContext('2d', { alpha: false });
 
   await waitSeek(video, startTime);
-  drawRotated(ctx, video, rotation, w, h);
+  drawRotated(ctx, video, rotation, w, h, cropInfo);
 
   const stream = canvas.captureStream(FPS);
   const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 5_000_000 });
@@ -494,7 +595,7 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
     };
     const tick = () => {
       if (done) return;
-      drawRotated(ctx, video, rotation, w, h);
+      drawRotated(ctx, video, rotation, w, h, cropInfo);
       const t = video.currentTime;
       onProgress(Math.min(99, Math.max(0, Math.round(((t - startTime) / duration) * 100))));
       if (t >= endTime || video.ended) { finish(); return; }
@@ -515,32 +616,35 @@ async function recordWithMediaRecorder(video, startTime, endTime, rotation, w, h
 }
 
 /**
- * Cuts [startTime, endTime] from the video into an upright, 30fps, ≤720p H.264 MP4.
+ * Cuts [startTime, endTime] from the video into an upright, 30fps, ≤720p H.264 MP4,
+ * cropped cleanly according to `aspectRatio`.
  * @param {HTMLVideoElement} video
  * @param {number} startTime
  * @param {number} endTime
  * @param {File|Blob} _originalFile (unused, kept for API compatibility)
  * @param {number} rotation
  * @param {(p:number)=>void} onProgress
+ * @param {string} aspectRatio 'original' | '9:16' | '1:1' | '4:5' | '16:9'
  * @returns {Promise<Uint8Array>}
  */
-export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}) {
+export async function trimVideoClip(video, startTime, endTime, _originalFile, rotation = 0, onProgress = () => {}, aspectRatio = 'original') {
   video.pause();
   video.muted = true;
   video.playsInline = true;
 
-  const { w, h } = computeOutputSize(video, rotation);
+  const cropInfo = computeOutputSize(video, rotation, aspectRatio);
+  const { w, h } = cropInfo;
 
   if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && Mp4Muxer) {
     const config = await pickEncoderConfig(w, h);
     if (config) {
       try {
-        return await encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress);
+        return await encodeWithWebCodecs(video, startTime, endTime, rotation, w, h, config, onProgress, cropInfo);
       } catch (err) {
         console.warn("WebCodecs gagal, mencoba MediaRecorder:", err);
       }
     }
   }
 
-  return recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress);
+  return recordWithMediaRecorder(video, startTime, endTime, rotation, w, h, onProgress, cropInfo);
 }
